@@ -23,17 +23,7 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://Admin:ghraib2014@cluster0.e9v8
 mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
 db = mongo_client[os.getenv("MONGO_DB_NAME", "attendance_db")]
 
-# # Verify connection at startup and fail loudly if MongoDB is not running
-# try:
-#     mongo_client.admin.command("ping")
-#     print("[OK] MongoDB connected successfully")
-# except ServerSelectionTimeoutError:
-#     raise RuntimeError(
-#         "\n\nMONGODB IS NOT RUNNING!\n"
-#         "    Start MongoDB with:  net start MongoDB\n"
-#         "    Or install it with:  winget install MongoDB.Server\n"
-#         "    Then run:  python seed_db.py\n"
-#     )
+# # Verify connection removed for serverless
 
 
 # --------------------
