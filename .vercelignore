@@ -1,0 +1,12 @@
+# Ignore heavy AI items for Vercel deployment
+models/
+all students/
+data/
+output/
+scripts/
+*.pt
+*.h5
+*.weights
+node_modules/
+venv/
+.env

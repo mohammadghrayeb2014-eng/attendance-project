@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Class Session - School Portal</title>
+  <!-- Fonts -->
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700&display=swap"
+    rel="stylesheet">
+  <!-- Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/style.css">
+  <!-- Legacy Scripts -->
+  <script defer src="js/auth.js"></script>
+  <script defer src="js/class.js"></script>
+  <script defer>
+    document.addEventListener("DOMContentLoaded", () => {
+      protectPage("teacher");
+      document.getElementById("logoutBtn").addEventListener("click", (e) => {
+        e.preventDefault();
+        logout();
+      });
+    });
+  </script>
+</head>
+
+<body class="dashboard-layout">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo gradient-text">
+      <i class="fa-solid fa-graduation-cap"></i> Portal
+    </div>
+
+    <nav class="nav-links">
+      <a href="teacher.html" class="nav-link">
+        <i class="fa-solid fa-arrow-left"></i> Back to Dashboard
+      </a>
+      <div style="margin-top: auto;">
+        <a href="#" id="logoutBtn" class="nav-link" style="color: var(--accent-secondary);">
+          <i class="fa-solid fa-right-from-bracket"></i> Logout
+        </a>
+      </div>
+    </nav>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <header class="header">
+      <div>
+        <h2 id="sessionTitle">Class Session</h2>
+        <p id="sessionMeta" style="color: var(--text-secondary);">Loading session details...</p>
+      </div>
+      <div class="user-profile">
+        <!-- Session State Badge -->
+        <span id="stateBadge" class="status status-inactive" style="font-size: 1rem; padding: 0.5rem 1rem;">IDLE</span>
+      </div>
+    </header>
+
+    <div class="class-stack">
+
+      <!-- Top: Session Controls -->
+      <div class="card" style="margin-top: 0;">
+        <h3><i class="fa-solid fa-sliders gradient-text"></i> Session Controls</h3>
+        <div class="flex gap-4 mb-4" style="margin-bottom: 1rem;">
+          <button id="startBtn" class="btn btn-primary" style="flex: 1;"><i class="fa-solid fa-play"></i>
+            Start</button>
+          <button id="pauseBtn" class="btn btn-outline" style="flex: 1;" disabled><i class="fa-solid fa-pause"></i>
+            Pause</button>
+          <button id="endBtn" class="btn btn-outline" style="color: #f87171; border-color: #f87171;" style="flex: 1;"
+            disabled><i class="fa-solid fa-stop"></i> End</button>
+        </div>
+      </div>
+
+      <!-- Middle: Seating Chart -->
+      <div class="card" style="margin-top: 0;">
+        <h3><i class="fa-solid fa-border-all gradient-text"></i> Seating Chart</h3>
+        <div id="seatGrid" class="seat-grid"
+          style="min-height: 200px; display: flex; align-items: center; justify-content: center; color: var(--text-secondary);">
+          <!-- Grid populated by JS -->
+          Grid will appear here...
+        </div>
+      </div>
+
+      <!-- Attendance Checklist -->
+      <div class="card" style="margin-top: 0;">
+        <div class="flex justify-between items-center mb-4">
+          <h3><i class="fa-solid fa-clipboard-user gradient-text"></i> Attendance Recap</h3>
+          <div id="accuracyBox"></div>
+          <div class="flex gap-2">
+            <button id="markAllPresentBtn" class="btn btn-outline"
+              style="padding: 0.5rem 0.8rem; font-size: 0.75rem; color: #4ade80; border-color: rgba(74, 222, 128, 0.3);"
+              onclick="markAll('Present')"><i class="fa-solid fa-check-double"></i> All Present</button>
+            <button id="markAllAbsentBtn" class="btn btn-outline"
+              style="padding: 0.5rem 0.8rem; font-size: 0.75rem; color: #f87171; border-color: rgba(248, 113, 113, 0.3);"
+              onclick="markAll('Absent')"><i class="fa-solid fa-xmark"></i> All Absent</button>
+            <button id="runAiBtn" class="btn btn-primary" style="padding: 0.5rem 1rem; font-size: 0.8rem;"
+              onclick="runVideoAttendance()"><i class="fa-solid fa-robot"></i> Run AI Attendance</button>
+            <button id="saveAttendanceBtn" class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.8rem;"><i
+                class="fa-solid fa-save"></i> Save Record</button>
+          </div>
+        </div>
+        <div class="table-container" style="max-height: 300px; overflow-y: auto;">
+          <table class="attendance-table" style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr
+                style="text-align: left; border-bottom: 1px solid var(--border-color); color: var(--text-secondary); font-size: 0.8rem;">
+                <th style="padding: 0.75rem;">SEAT</th>
+                <th style="padding: 0.75rem;">STUDENT</th>
+                <th style="padding: 0.75rem;">ACCURACY</th>
+                <th style="padding: 0.75rem;">STATUS</th>
+                <th style="padding: 0.75rem; text-align: right;">ACTION</th>
+              </tr>
+            </thead>
+            <tbody id="attendanceBody">
+              <!-- Populated by JS -->
+              <tr>
+                <td colspan="4" style="padding: 2rem; text-align: center; color: var(--text-secondary);">No students
+                  assigned to seats yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Bottom: Camera -->
+      <div class="card" style="margin-top: 0;">
+        <div class="flex justify-between items-center mb-4">
+          <h3><i class="fa-solid fa-camera gradient-text"></i> Live Camera</h3>
+          <div id="camStatus" class="status status-inactive">Not Connected</div>
+        </div>
+
+        <!-- Controls -->
+        <div class="input-group mb-4">
+          <label>Stream URL or Upload Video</label>
+          <div class="flex gap-2">
+            <input id="camUrl" placeholder="http://192.168.x.x:81/stream" class="input-field" style="margin-bottom: 0;">
+            <button id="connectBtn" class="btn btn-primary"><i class="fa-solid fa-link"></i> Connect</button>
+            <button id="uploadTriggerBtn" class="btn btn-outline" title="Upload Video for processing"><i
+                class="fa-solid fa-upload"></i></button>
+            <input type="file" id="videoUpload" accept="video/*" style="display: none;">
+            <button id="disconnectBtn" class="btn btn-outline" style="display: none;">Disconnect</button>
+          </div>
+          <div id="camHint" class="smallnote"
+            style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-secondary);"></div>
+        </div>
+
+        <!-- Advanced Settings (Required by class.js) -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+          <div class="input-group">
+            <label>Mode</label>
+            <select id="camMode" class="input-field" style="margin-bottom: 0;">
+              <option value="mjpeg">MJPEG Stream</option>
+              <option value="snapshot">Snapshot Loop</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label>FPS (Snapshot)</label>
+            <select id="camFps" class="input-field" style="margin-bottom: 0;">
+              <option value="1">1 FPS</option>
+              <option value="5" selected>5 FPS</option>
+              <option value="10">10 FPS</option>
+              <option value="30">30 FPS</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+            <input type="checkbox" id="autoReconnect" style="width: auto; margin-bottom: 0;"> Auto-reconnect if stream
+            drops
+          </label>
+        </div>
+
+        <!-- Video Feed -->
+        <div class="cam-box">
+          <img id="camImg" style="display:none; width:100%; height: 100%; object-fit: cover;">
+          <div id="camPlaceholder"
+            style="background: #000; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); flex-direction: column; gap: 1rem;">
+            <i class="fa-solid fa-video-slash" style="font-size: 3rem; opacity: 0.5;"></i>
+            <span>No signal</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Attendance History -->
+    <div class="card" style="margin-top: 1.5rem;">
+      <h3><i class="fa-solid fa-history gradient-text"></i> Session History</h3>
+      <div id="historyList"
+        style="margin-top: 1rem; max-height: 200px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.05); border-radius: 8px;">
+        <div style="padding: 1rem; text-align: center; color: var(--text-secondary);">Loading history...</div>
+      </div>
+    </div>
+    </div>
+  </main>
+
+  <!-- Edit Seat Modal -->
+  <div id="seatModal" class="modal-overlay" style="display: none;">
+    <div class="modal card" style="min-width: 300px; margin-top: 0;">
+      <h3>Edit Seat <span id="modalSeatLabel"></span></h3>
+      <div class="input-group">
+        <label>Student Name</label>
+        <input id="modalStudentName" class="input-field" placeholder="Enter name..." autofocus>
+      </div>
+      <div class="flex gap-4" style="justify-content: flex-end;">
+        <button id="modalCancelBtn" class="btn btn-outline">Cancel</button>
+        <button id="modalSaveBtn" class="btn btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>

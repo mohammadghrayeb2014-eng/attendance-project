@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+.env
+
+# Data and Models
+data/classroom_videos/*
+!data/classroom_videos/.gitkeep
+data/students/*
+!data/students/.gitkeep
+output/
+logs/
+*.pt
+*.h5
+*.weights
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini

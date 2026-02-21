@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - School Portal</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700&display=swap"
+        rel="stylesheet">
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Styles -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .login-page {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .login-page::before {
+            content: '';
+            position: absolute;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 50% 50%, rgba(37, 99, 235, 0.1) 0%, transparent 50%);
+            animation: rotate 30s linear infinite;
+        }
+
+        @keyframes rotate {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .login-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 1.5rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            width: 100%;
+            max-width: 440px;
+            padding: 3rem;
+            position: relative;
+            z-index: 10;
+        }
+
+        .logo-container {
+            text-align: center;
+            margin-bottom: 2.5rem;
+        }
+
+        .logo-icon {
+            font-size: 3.5rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .role-selector {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.75rem;
+            margin-bottom: 2rem;
+            background: var(--bg-secondary);
+            padding: 0.4rem;
+            border-radius: 0.75rem;
+        }
+
+        .role-btn {
+            padding: 0.6rem;
+            border-radius: 0.5rem;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .role-btn.active {
+            background: white;
+            color: var(--accent-primary);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+        }
+
+        .input-wrapper {
+            position: relative;
+        }
+
+        .input-wrapper i {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+        }
+
+        .input-wrapper input {
+            padding-left: 2.75rem;
+        }
+
+        #loginMsg {
+            margin-top: 1rem;
+            font-size: 0.875rem;
+            text-align: center;
+            min-height: 1.25rem;
+        }
+    </style>
+</head>
+
+<body class="login-page">
+    <div class="login-card">
+        <div class="logo-container">
+            <i class="fa-solid fa-graduation-cap logo-icon"></i>
+            <h1 class="gradient-text" style="font-size: 2.25rem; margin-bottom: 0.25rem;">School Portal</h1>
+            <p style="color: var(--text-secondary);">Secure Access to Education</p>
+        </div>
+
+        <div class="role-selector">
+            <button type="button" class="role-btn active" onclick="selectRole('student', this)">
+                <i class="fa-solid fa-user-graduate"></i> Student
+            </button>
+            <button type="button" class="role-btn" onclick="selectRole('teacher', this)">
+                <i class="fa-solid fa-chalkboard-user"></i> Teacher
+            </button>
+            <button type="button" class="role-btn" onclick="selectRole('admin', this)">
+                <i class="fa-solid fa-shield-halved"></i> Admin
+            </button>
+        </div>
+        <input type="hidden" id="roleInput" value="student">
+
+        <form id="loginForm" onsubmit="handleLogin(event)">
+            <div class="input-group">
+                <label>Username</label>
+                <div class="input-wrapper">
+                    <i class="fa-solid fa-user"></i>
+                    <input type="text" id="username" class="input-field" placeholder="Enter your username" required>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label>Password</label>
+                <div class="input-wrapper">
+                    <i class="fa-solid fa-lock"></i>
+                    <input type="password" id="password" class="input-field" placeholder="••••••••" required>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+                <label
+                    style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-secondary); cursor: pointer;">
+                    <input type="checkbox" style="width: auto; margin: 0;"> Remember me
+                </label>
+                <a href="#"
+                    style="font-size: 0.85rem; color: var(--accent-primary); text-decoration: none; font-weight: 600;">Forgot
+                    Password?</a>
+            </div>
+
+            <button type="submit" id="submitBtn" class="btn btn-primary w-full" style="padding: 1rem;">
+                Sign In <i class="fa-solid fa-arrow-right" style="margin-left: 0.5rem;"></i>
+            </button>
+        </form>
+
+        <div id="loginMsg"></div>
+    </div>
+
+    <script>
+        // API Base - assuming school-portal/backend/app.py is running on port 8000
+        const API_BASE = "http://127.0.0.1:5001/api";
+        const STORAGE_KEY = "user";
+
+        function selectRole(role, btn) {
+            document.getElementById('roleInput').value = role;
+            document.querySelectorAll('.role-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const role = document.getElementById('roleInput').value;
+            const msgEl = document.getElementById('loginMsg');
+            const btn = document.getElementById('submitBtn');
+
+            msgEl.textContent = "";
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Authenticating...';
+
+            try {
+                const res = await fetch(`${API_BASE}/login`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username, password }),
+                });
+
+                const data = await res.json().catch(() => ({}));
+
+                if (!res.ok) {
+                    throw new Error(data.error || "Invalid credentials");
+                }
+
+                // Verify role match (optional security layer)
+                if (data.role !== role && data.role !== 'admin') {
+                    // If they selected teacher but are student, or vice versa
+                    // But usually the backend defines the role. Let's just follow backend role.
+                }
+
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+                msgEl.style.color = "#10b981";
+                msgEl.textContent = "Success! Redirecting...";
+
+                setTimeout(() => {
+                    const r = data.role;
+                    if (r === "admin") window.location.href = "/admin";
+                    else if (r === "teacher") window.location.href = "/teacher";
+                    else window.location.href = "/student";
+                }, 1000);
+
+            } catch (err) {
+                msgEl.style.color = "#ef4444";
+                msgEl.textContent = err.message;
+                btn.disabled = false;
+                btn.innerHTML = 'Sign In <i class="fa-solid fa-arrow-right" style="margin-left: 0.5rem;"></i>';
+            }
+        }
+
+        // Initialize from last used role or default
+        window.addEventListener('load', () => {
+            // Optional: load from localStorage
+        });
+    </script>
+</body>
+
+</html>

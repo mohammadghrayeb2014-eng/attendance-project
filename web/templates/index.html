@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Session - School Portal</title>
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Styles -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body class="dashboard-layout">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <i class="fa-solid fa-graduation-cap gradient-text"></i>
+      <span class="gradient-text">Portal</span>
+    </div>
+
+    <nav class="nav-links">
+      <a href="/teacher" class="nav-link">
+        <i class="fa-solid fa-arrow-left"></i> Back to Dashboard
+      </a>
+      <div class="divider" style="margin: 1rem 0; border-top: 1px solid var(--border-color);"></div>
+      <a href="#" class="nav-link active">
+        <i class="fa-solid fa-video"></i> Live Session
+      </a>
+      <a href="#" class="nav-link">
+        <i class="fa-solid fa-users"></i> Student List
+      </a>
+    </nav>
+  </aside>
+
+  <main class="main-content">
+    <header class="header">
+      <div>
+        <h2 id="sessionTitle">Live Attendance <span class="gradient-text">Tracker</span></h2>
+        <p id="sessionSubtitle" style="color: var(--text-secondary);">Initializing session...</p>
+      </div>
+      <div class="user-profile">
+        <div style="display: flex; align-items: center; gap: 1rem;">
+          <span id="status" class="status status-pending">Ready</span>
+          <button id="runBtn" class="btn btn-primary">
+            <i class="fa-solid fa-play"></i> Run Attendance
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div style="display: grid; grid-template-columns: 3fr 1fr; gap: 2rem;">
+      <!-- Left: Table & Grid -->
+      <div>
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h3>Attendance Results</h3>
+            <button class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.8rem;">Export CSV</button>
+          </div>
+          <div id="tableBox" style="overflow-x: auto;">
+            <div style="padding: 3rem; text-align: center; color: var(--text-secondary);">
+              No data captured yet.
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Debug Frames</h3>
+          <div id="frames" class="frames" style="margin-top: 1rem;">
+            <div style="grid-column: 1/-1; padding: 2rem; text-align: center; color: var(--text-secondary);">
+              Visual verification will appear here.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Session Info -->
+      <div class="flex-col gap-4">
+        <div class="card">
+          <h3>Class Info</h3>
+          <div id="classInfoBox" style="margin-top: 1.5rem;">
+            <!-- Injected via JS -->
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Quick Actions</h3>
+          <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1.5rem;">
+            <button class="btn btn-outline w-full"><i class="fa-solid fa-camera"></i> Manual Capture</button>
+            <button class="btn btn-outline w-full"><i class="fa-solid fa-rotate"></i> Reset Session</button>
+            <button class="btn btn-primary w-full" style="background: #10b981; border: none;"><i
+                class="fa-solid fa-check-double"></i> Finalize Results</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script>
+    // Specific logic for session page
+    const ACTIVE_KEY = "active_assignment";
+    window.addEventListener('load', () => {
+      const raw = localStorage.getItem(ACTIVE_KEY);
+      if (raw) {
+        const sub = JSON.parse(raw);
+        document.getElementById('sessionSubtitle').textContent = `${sub.class_name} • ${sub.subject_name}`;
+        document.getElementById('classInfoBox').innerHTML = `
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                        <div style="font-size: 0.85rem; color: var(--text-secondary);">Class ID</div>
+                        <div style="font-weight: 600;">${sub.class_id}</div>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">Subject</div>
+                        <div style="font-weight: 600;">${sub.subject_name}</div>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">Seating</div>
+                        <div style="font-weight: 600;">${sub.rows} x ${sub.cols}</div>
+                    </div>
+                `;
+      }
+    });
+  </script>
+</body>
+
+</html>

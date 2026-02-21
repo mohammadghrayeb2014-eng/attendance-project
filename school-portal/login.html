@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - School Portal</title>
+  <!-- Fonts -->
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700&display=swap"
+    rel="stylesheet">
+  <!-- Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Styles: Force correct light theme -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body class="login-page">
+  <!-- Dynamic Background Element -->
+  <div class="bg-blob-container">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+  </div>
+
+  <div class="login-container">
+    <div class="login-card">
+      <div class="text-center" style="margin-bottom: 2.5rem;">
+        <div class="logo-shield mb-4">
+          <i class="fa-solid fa-graduation-cap"></i>
+        </div>
+        <h1 class="gradient-text">School Portal</h1>
+
+      </div>
+
+      <form id="loginForm" class="stagger-in">
+        <div class="input-group">
+          <label for="username">Username</label>
+          <div class="input-wrapper">
+            <i class="fa-solid fa-user input-icon"></i>
+            <input type="text" id="username" class="input-field" placeholder="Username or Email" required>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label for="password">Password</label>
+          <div class="input-wrapper">
+            <i class="fa-solid fa-lock input-icon"></i>
+            <input type="password" id="password" class="input-field" placeholder="Enter password" required>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-premium w-full">
+          Sign in
+          <div class="btn-shine"></div>
+        </button>
+
+        <div id="error" class="error-toast"></div>
+      </form>
+
+      <div class="login-footer">
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Legacy Script -->
+  <script src="js/auth.js?v=1.1"></script>
+  <script>
+    // CRITICAL: only call auth.js login(), no redirects here
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button[type="submit"]');
+      const originalText = btn.innerHTML;
+
+      // Loading state
+      btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Signing in...';
+
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value;
+
+      // Allow UI to update
+      await new Promise(r => setTimeout(r, 500));
+
+      const result = await login(username, password);
+
+      if (!result.ok) {
+        document.getElementById("error").textContent = result.error;
+        btn.innerHTML = originalText;
+      }
+      // If ok, login() handles redirect
+    });
+  </script>
+</body>
+
+</html>

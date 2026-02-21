@@ -1,0 +1,110 @@
+[
+  {
+    "id": 1,
+    "teacher_username": "ry2",
+    "class_id": 1,
+    "subject_id": 1
+  },
+  {
+    "id": 2,
+    "teacher_username": "Ahmad",
+    "class_id": 1,
+    "subject_id": 1
+  },
+  {
+    "id": 3,
+    "teacher_username": "rt",
+    "class_id": 1,
+    "subject_id": 1
+  },
+  {
+    "id": 4,
+    "teacher_username": "ok",
+    "class_id": 1,
+    "subject_id": 2
+  },
+  {
+    "id": 5,
+    "teacher_username": "ok",
+    "class_id": 1,
+    "subject_id": 1
+  },
+  {
+    "id": 6,
+    "teacher_username": "ok1",
+    "class_id": 1,
+    "subject_id": 1
+  },
+  {
+    "id": 7,
+    "teacher_username": "ok1",
+    "class_id": 1,
+    "subject_id": 2
+  },
+  {
+    "id": 8,
+    "teacher_username": "ok1",
+    "class_id": 2,
+    "subject_id": 3
+  },
+  {
+    "id": 9,
+    "teacher_username": "ok1",
+    "class_id": 2,
+    "subject_id": 1
+  },
+  {
+    "id": 10,
+    "teacher_username": "nour",
+    "class_id": 2,
+    "subject_id": 1
+  },
+  {
+    "id": 11,
+    "teacher_username": "nour",
+    "class_id": 2,
+    "subject_id": 2
+  },
+  {
+    "id": 12,
+    "teacher_username": "razan",
+    "class_id": 2,
+    "subject_id": 1
+  },
+  {
+    "id": 13,
+    "teacher_username": "razan",
+    "class_id": 2,
+    "subject_id": 2
+  },
+  {
+    "id": 14,
+    "teacher_username": "noor",
+    "class_id": 2,
+    "subject_id": 1
+  },
+  {
+    "id": 15,
+    "teacher_username": "noor",
+    "class_id": 2,
+    "subject_id": 3
+  },
+  {
+    "id": 16,
+    "teacher_username": "t",
+    "class_id": 3,
+    "subject_id": 1
+  },
+  {
+    "id": 17,
+    "teacher_username": "t",
+    "class_id": 2,
+    "subject_id": 5
+  },
+  {
+    "id": 18,
+    "teacher_username": "b",
+    "class_id": 4,
+    "subject_id": 5
+  }
+]

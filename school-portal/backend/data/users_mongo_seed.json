@@ -1,0 +1,30 @@
+[
+  {
+    "id": 1,
+    "username": "admin",
+    "role": "admin",
+    "name": "Admin",
+    "password_hash": "$2b$12$4KrlXF6cn6TLw0VERYPhLefqVG.fOUhPQnNlPlT9AHC7W6DPxQQEa"
+  },
+  {
+    "id": 2,
+    "username": "teacher4495",
+    "role": "teacher",
+    "name": "Teacher 4495",
+    "password_hash": "$2b$12$mpN7GaQ3eBpZ0tLgCIHTIuyCOw3WQ03rmLTyqzswkRjixLOyRsBZa"
+  },
+  {
+    "id": 3,
+    "username": "ryjyrjy",
+    "role": "teacher",
+    "name": "ryjyr",
+    "password_hash": "$2b$12$bmKmUxjBbarzyBSJP3RP6uiEk0fq9pI6Ml7fNcPW119UKSXStwLCK"
+  },
+  {
+    "id": 18,
+    "username": "student1",
+    "role": "student",
+    "name": "Ali",
+    "password_hash": "$2b$12$Onao8kf5blkoDjN/.j6wcuLUt08M9H65Wtkm7co00SQ0b9CRLFnRC"
+  }
+]
