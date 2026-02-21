@@ -109,19 +109,22 @@ def api_health():
 
 @app.get("/api/init_admin")
 def init_admin():
-    pw_hash = bcrypt.hashpw("admin123".encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    db["users"].update_one(
-        {"username": "admin"},
-        {"$set": {
-            "id": 1,
-            "username": "admin",
-            "role": "admin",
-            "name": "Administrator",
-            "password_hash": pw_hash
-        }},
-        upsert=True
-    )
-    return "✅ Admin account created/reset to admin123! Go back to login."
+    try:
+        pw_hash = bcrypt.hashpw("admin123".encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        db["users"].update_one(
+            {"username": "admin"},
+            {"$set": {
+                "id": 1,
+                "username": "admin",
+                "role": "admin",
+                "name": "Administrator",
+                "password_hash": pw_hash
+            }},
+            upsert=True
+        )
+        return "✅ Admin account created/reset to admin123! Go back to login."
+    except Exception as e:
+        return f"❌ DATABASE ERROR: {str(e)}"
 
 
 # --------------------
