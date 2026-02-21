@@ -87,7 +87,7 @@ def replace_collection(collection_name: str, data: list):
             col.insert_many([{k: v for k, v in d.items() if k != "_id"} for d in data])
         return
 
-    # Fallback: overwrite JSON file
+    
     data_file = BASE_DIR / "data" / f"{collection_name}.json"
     try:
         cleaned = [{k: v for k, v in d.items() if k != "_id"} for d in (data or [])]
@@ -169,7 +169,7 @@ def index():
 def get_teachers():
     users = read_collection("users", {"role": "teacher"})
     return jsonify([
-        {"id": u["id"], "username": u["username"], "name": u.get("name", u["username"])}
+        {"id": u.get("id"), "username": u.get("username"), "name": u.get("name", u.get("username"))}
         for u in users
     ])
 
@@ -178,7 +178,7 @@ def get_teachers():
 def get_students():
     users = read_collection("users", {"role": "student"})
     return jsonify([
-        {"id": u["id"], "username": u["username"], "name": u.get("name", u["username"])}
+        {"id": u.get("id"), "username": u.get("username"), "name": u.get("name", u.get("username"))}
         for u in users
     ])
 
