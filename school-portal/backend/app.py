@@ -8,8 +8,7 @@ import string
 from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
 import os
-import certifi
-ca = certifi.where()
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -19,15 +18,25 @@ load_dotenv()
 BASE_DIR = Path(__file__).parent
 PARENT_DIR = BASE_DIR.parent
 
-app = Flask(__name__, static_folder=os.path.join(os.getcwd(), "school-portal"), static_url_path="")
+app = Flask(__name__, static_folder=str(PARENT_DIR), static_url_path="")
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# MongoDB setup - FORCED CLOUD LINK
-MONGO_URI = "mongodb+srv://Admin:ghraib2014@cluster0.e9v82ox.mongodb.net/attendance_db?retryWrites=true&w=majority"
-mongo_client = MongoClient(MONGO_URI, tlsCAFile=ca, serverSelectionTimeoutMS=10000, connect=False)
-db = mongo_client["attendance_db"]
+# MongoDB setup
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+db = mongo_client[os.getenv("MONGO_DB_NAME", "attendance_db")]
 
-# # Verify connection removed for serverless
+# Verify connection at startup and fail loudly if MongoDB is not running
+try:
+    mongo_client.admin.command("ping")
+    print("[OK] MongoDB connected successfully")
+except ServerSelectionTimeoutError:
+    raise RuntimeError(
+        "\n\nMONGODB IS NOT RUNNING!\n"
+        "    Start MongoDB with:  net start MongoDB\n"
+        "    Or install it with:  winget install MongoDB.Server\n"
+        "    Then run:  python seed_db.py\n"
+    )
 
 
 # --------------------
@@ -108,32 +117,13 @@ def api_login():
 def api_health():
     return jsonify({"status": "ok"})
 
-@app.get("/api/init_admin")
-def init_admin():
-    try:
-        pw_hash = bcrypt.hashpw("admin123".encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-        db["users"].update_one(
-            {"username": "admin"},
-            {"$set": {
-                "id": 1,
-                "username": "admin",
-                "role": "admin",
-                "name": "Administrator",
-                "password_hash": pw_hash
-            }},
-            upsert=True
-        )
-        return "✅ Admin account created/reset to admin123! Go back to login."
-    except Exception as e:
-        return f"❌ DATABASE ERROR: {str(e)}"
-
 
 # --------------------
 # ROOT – serve login page from school-portal/
 # --------------------
 @app.route("/")
 def index():
-    return send_from_directory(app.static_folder, "login.html")
+    return send_from_directory(str(PARENT_DIR), "login.html")
 
 
 # --------------------
