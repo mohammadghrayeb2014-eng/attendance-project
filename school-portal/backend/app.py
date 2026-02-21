@@ -18,12 +18,17 @@ load_dotenv()
 app = Flask(__name__, static_folder=os.path.join(os.getcwd(), "school-portal"), static_url_path="")
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# MongoDB setup
-# MongoDB setup
-MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://Admin:ghraib2014@cluster0.e9v82ox.mongodb.net/?appName=Cluster0")
-# Added tls=True and tlsAllowInvalidCertificates=True to bypass the handshake error
-mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True, tlsAllowInvalidCertificates=True)
-db = mongo_client[os.getenv("MONGO_DB_NAME", "attendance_db")]
+# MongoDB setup - FORCED CLOUD LINK
+MONGO_URI = "mongodb+srv://Admin:ghraib2014@cluster0.e9v82ox.mongodb.net/attendance_db?retryWrites=true&w=majority"
+# Added robust parameters for Vercel Serverless + MongoDB Atlas handshake fix
+mongo_client = MongoClient(
+    MONGO_URI, 
+    serverSelectionTimeoutMS=10000, 
+    tls=True, 
+    tlsAllowInvalidCertificates=True,
+    connect=False
+)
+db = mongo_client["attendance_db"]
 
 # # Verify connection removed for serverless
 
