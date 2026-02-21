@@ -24,41 +24,76 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 # MongoDB setup
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-db = mongo_client[os.getenv("MONGO_DB_NAME", "attendance_db")]
-
-# Verify connection at startup and fail loudly if MongoDB is not running
+mongo_db_name = os.getenv("MONGO_DB_NAME", "attendance_db")
+db = None
 try:
+    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    # attempt a ping to see if Mongo is reachable
     mongo_client.admin.command("ping")
+    db = mongo_client[mongo_db_name]
     print("[OK] MongoDB connected successfully")
-except ServerSelectionTimeoutError:
-    raise RuntimeError(
-        "\n\nMONGODB IS NOT RUNNING!\n"
-        "    Start MongoDB with:  net start MongoDB\n"
-        "    Or install it with:  winget install MongoDB.Server\n"
-        "    Then run:  python seed_db.py\n"
-    )
+except Exception as e:
+    # Don't crash in serverless environments; fall back to JSON data files (read-only)
+    print("[WARN] MongoDB unavailable at startup, falling back to JSON files. Error:", e)
 
 
 # --------------------
 # DB helpers – MongoDB only, no JSON fallback
 # --------------------
 def read_collection(collection_name: str, query: dict = None) -> list:
-    """Read documents from a MongoDB collection, excluding the _id field."""
-    col = db[collection_name]
-    return list(col.find(query or {}, {"_id": False}))
+    """Read documents from MongoDB if available, otherwise from backend JSON files."""
+    if db:
+        col = db[collection_name]
+        return list(col.find(query or {}, {"_id": False}))
+
+    # Fallback: read from backend/data/<collection>.json
+    data_file = BASE_DIR / "data" / f"{collection_name}.json"
+    if not data_file.exists():
+        return []
+    try:
+        return json.loads(data_file.read_text(encoding="utf-8"))
+    except Exception:
+        return []
 
 
 def upsert_document(collection_name: str, doc: dict):
     """Insert a single document."""
-    db[collection_name].insert_one({k: v for k, v in doc.items() if k != "_id"})
+    if db:
+        db[collection_name].insert_one({k: v for k, v in doc.items() if k != "_id"})
+        return
+
+    # Fallback: append to JSON file (best-effort). In serverless/read-only env this may fail.
+    data_file = BASE_DIR / "data" / f"{collection_name}.json"
+    items = []
+    if data_file.exists():
+        try:
+            items = json.loads(data_file.read_text(encoding="utf-8")) or []
+        except Exception:
+            items = []
+    items.append({k: v for k, v in doc.items() if k != "_id"})
+    try:
+        data_file.write_text(json.dumps(items, indent=2), encoding="utf-8")
+    except Exception:
+        # If writing fails (e.g., read-only filesystem), raise to let caller handle
+        raise RuntimeError("Database not available and filesystem not writable")
 
 
 def replace_collection(collection_name: str, data: list):
     """Replace an entire collection with new data (delete all then insert)."""
-    col = db[collection_name]
-    col.delete_many({})
-    if data:
-        col.insert_many([{k: v for k, v in d.items() if k != "_id"} for d in data])
+    if db:
+        col = db[collection_name]
+        col.delete_many({})
+        if data:
+            col.insert_many([{k: v for k, v in d.items() if k != "_id"} for d in data])
+        return
+
+    # Fallback: overwrite JSON file
+    data_file = BASE_DIR / "data" / f"{collection_name}.json"
+    try:
+        cleaned = [{k: v for k, v in d.items() if k != "_id"} for d in (data or [])]
+        data_file.write_text(json.dumps(cleaned, indent=2), encoding="utf-8")
+    except Exception:
+        raise RuntimeError("Database not available and filesystem not writable")
 
 
 def next_id(items: list) -> int:
