@@ -21,10 +21,9 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 # MongoDB setup
 # MongoDB setup
 MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://Admin:ghraib2014@cluster0.e9v82ox.mongodb.net/?appName=Cluster0")
-print(f"DEBUG: Initializing MongoClient with URI ending in: {MONGO_URI[-20:]}")
-mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+# Added tls=True and tlsAllowInvalidCertificates=True to bypass the handshake error
+mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True, tlsAllowInvalidCertificates=True)
 db = mongo_client[os.getenv("MONGO_DB_NAME", "attendance_db")]
-print(f"DEBUG: Connected to DB: {db.name}")
 
 # # Verify connection removed for serverless
 
