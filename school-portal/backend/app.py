@@ -8,7 +8,8 @@ import string
 from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
 import os
-from dotenv import load_dotenv
+import certifi
+ca = certifi.where()
 
 load_dotenv()
 
@@ -20,12 +21,11 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # MongoDB setup - FORCED CLOUD LINK
 MONGO_URI = "mongodb+srv://Admin:ghraib2014@cluster0.e9v82ox.mongodb.net/attendance_db?retryWrites=true&w=majority"
-# Added robust parameters for Vercel Serverless + MongoDB Atlas handshake fix
+# Added tlsCAFile=ca (the "ID badge") to finally fix the Vercel connection!
 mongo_client = MongoClient(
     MONGO_URI, 
-    serverSelectionTimeoutMS=10000, 
-    tls=True, 
-    tlsAllowInvalidCertificates=True,
+    tlsCAFile=ca,
+    serverSelectionTimeoutMS=10000,
     connect=False
 )
 db = mongo_client["attendance_db"]
