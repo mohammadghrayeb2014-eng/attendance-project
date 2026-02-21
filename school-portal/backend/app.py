@@ -76,16 +76,19 @@ def generate_password(length: int = 10) -> str:
 @app.post("/api/login")
 def api_login():
     payload = request.get_json(force=True, silent=True) or {}
-    username = (payload.get("username") or "").strip()
+    username = (payload.get("username") or "").strip().lower()
     password = payload.get("password") or ""
 
     if not username or not password:
         return jsonify({"error": "Username and password required"}), 400
 
-    users = read_collection("users", {"username": username})
+    print(f"[LOGIN] Attempting login for username: {username}")
+    users = read_collection("users", {"username": {"$regex": f"^{username}$", "$options": "i"}})
+    print(f"[LOGIN] Found {len(users)} user(s)")
     user = users[0] if users else None
 
     if not user:
+        print(f"[LOGIN] User not found")
         return jsonify({"error": "Invalid credentials"}), 401
 
     raw_pw_hash = user.get("password_hash") or ""
@@ -150,13 +153,13 @@ def get_students():
 @app.post("/api/admin/create_teacher")
 def admin_create_teacher():
     payload = request.get_json(force=True, silent=True) or {}
-    username = (payload.get("username") or "").strip()
+    username = (payload.get("username") or "").strip().lower()
     name = (payload.get("name") or "").strip() or username
 
     if not username:
         return jsonify({"error": "Username required"}), 400
 
-    if read_collection("users", {"username": username}):
+    if read_collection("users", {"username": {"$regex": f"^{username}$", "$options": "i"}}):
         return jsonify({"error": "Username already exists"}), 400
 
     plain_password = generate_password()
@@ -176,13 +179,13 @@ def admin_create_teacher():
 @app.post("/api/admin/create_student")
 def admin_create_student():
     payload = request.get_json(force=True, silent=True) or {}
-    username = (payload.get("username") or "").strip()
+    username = (payload.get("username") or "").strip().lower()
     name = (payload.get("name") or "").strip() or username
 
     if not username:
         return jsonify({"error": "Username required"}), 400
 
-    if read_collection("users", {"username": username}):
+    if read_collection("users", {"username": {"$regex": f"^{username}$", "$options": "i"}}):
         return jsonify({"error": "Username already exists"}), 400
 
     plain_password = generate_password()
