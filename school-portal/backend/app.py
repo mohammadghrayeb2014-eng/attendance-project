@@ -16,18 +16,15 @@ load_dotenv()
 # --------------------
 # App setup
 # --------------------
+BASE_DIR = Path(__file__).parent
+PARENT_DIR = BASE_DIR.parent
+
 app = Flask(__name__, static_folder=os.path.join(os.getcwd(), "school-portal"), static_url_path="")
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # MongoDB setup - FORCED CLOUD LINK
 MONGO_URI = "mongodb+srv://Admin:ghraib2014@cluster0.e9v82ox.mongodb.net/attendance_db?retryWrites=true&w=majority"
-# Added tlsCAFile=ca (the "ID badge") to finally fix the Vercel connection!
-mongo_client = MongoClient(
-    MONGO_URI, 
-    tlsCAFile=ca,
-    serverSelectionTimeoutMS=10000,
-    connect=False
-)
+mongo_client = MongoClient(MONGO_URI, tlsCAFile=ca, serverSelectionTimeoutMS=10000, connect=False)
 db = mongo_client["attendance_db"]
 
 # # Verify connection removed for serverless
