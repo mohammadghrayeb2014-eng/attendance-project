@@ -82,13 +82,11 @@ def api_login():
     if not username or not password:
         return jsonify({"error": "Username and password required"}), 400
 
-    print(f"[LOGIN] Attempting login for username: {username}")
-    users = read_collection("users", {"username": {"$regex": f"^{username}$", "$options": "i"}})
-    print(f"[LOGIN] Found {len(users)} user(s)")
-    user = users[0] if users else None
+    # Get all users and find case-insensitive match
+    all_users = read_collection("users")
+    user = next((u for u in all_users if u.get("username", "").lower() == username), None)
 
     if not user:
-        print(f"[LOGIN] User not found")
         return jsonify({"error": "Invalid credentials"}), 401
 
     raw_pw_hash = user.get("password_hash") or ""
@@ -159,7 +157,9 @@ def admin_create_teacher():
     if not username:
         return jsonify({"error": "Username required"}), 400
 
-    if read_collection("users", {"username": {"$regex": f"^{username}$", "$options": "i"}}):
+    # Check for case-insensitive duplicate
+    all_users = read_collection("users")
+    if any(u.get("username", "").lower() == username for u in all_users):
         return jsonify({"error": "Username already exists"}), 400
 
     plain_password = generate_password()
@@ -185,7 +185,9 @@ def admin_create_student():
     if not username:
         return jsonify({"error": "Username required"}), 400
 
-    if read_collection("users", {"username": {"$regex": f"^{username}$", "$options": "i"}}):
+    # Check for case-insensitive duplicate
+    all_users = read_collection("users")
+    if any(u.get("username", "").lower() == username for u in all_users):
         return jsonify({"error": "Username already exists"}), 400
 
     plain_password = generate_password()
