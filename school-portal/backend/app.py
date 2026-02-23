@@ -22,19 +22,29 @@ app = Flask(__name__, static_folder=str(PARENT_DIR), static_url_path="")
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # MongoDB setup
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
-mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-mongo_db_name = os.getenv("MONGO_DB_NAME", "attendance_db")
+MONGO_URI = os.getenv("MONGO_URI") or os.getenv("MONGO_URL") or "mongodb://localhost:27017/attendance_db"
+mongo_db_name = os.getenv("MONGO_DB_NAME")
+
+try:
+    # Use certifi for cloud SSL if needed, otherwise standard
+    import certifi
+    ca = certifi.where()
+    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tlsCAFile=ca)
+except ImportError:
+    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+
 db = None
 try:
-    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    # attempt a ping to see if Mongo is reachable
+    # If DB name isn't a separate variable, MongoClient can get it from the URI
+    # or we default to 'attendance_db' if the URI is just the host
+    active_db_name = mongo_db_name or mongo_client.get_default_database().name or "attendance_db"
     mongo_client.admin.command("ping")
-    db = mongo_client[mongo_db_name]
-    print("[OK] MongoDB connected successfully")
+    db = mongo_client[active_db_name]
+    print(f"[OK] MongoDB connected to database: {active_db_name}")
 except Exception as e:
-    print("[ERROR] MongoDB unavailable at startup. Ensure MONGO_URI is set and reachable. Error:", e)
-    raise SystemExit("MongoDB connection required. Set MONGO_URI and ensure MongoDB is reachable.")
+    print("[ERROR] MongoDB connection failed:", e)
+    # Default fallback for local testing
+    db = mongo_client["attendance_db"]
 
 
 # --------------------
