@@ -29,9 +29,9 @@
       <span class="gradient-text">Teacher</span>
     </div>
     <nav class="nav-links">
-      <a href="#" class="nav-link active" id="navMyClasses"><i class="fa-solid fa-chalkboard"></i> Resources</a>
-      <a href="#" class="nav-link" id="navLiveSession"><i class="fa-solid fa-tower-broadcast"></i> Live Feed</a>
-      <a href="#" class="nav-link" id="navAttendance"><i class="fa-solid fa-clipboard-user"></i> Logs</a>
+      <a href="#" class="nav-link active" id="navMyClasses"><i class="fa-solid fa-chalkboard"></i> Classes</a>
+      <a href="#" class="nav-link" id="navLiveSession"><i class="fa-solid fa-tower-broadcast"></i> Live Session</a>
+      <a href="#" class="nav-link" id="navAttendance"><i class="fa-solid fa-clipboard-user"></i> Attendance</a>
       <div style="margin-top: auto;">
         <a href="#" id="logoutBtn" class="nav-link" style="color: #ef4444;"><i class="fa-solid fa-power-off"></i>
           Exit</a>
@@ -43,7 +43,7 @@
     <header class="header">
       <div>
 
-        <p class="text-muted" id="who">Teacher authentication active...</p>
+        <p class="text-muted" id="who">Welcome, teacher...</p>
       </div>
       <div class="avatar" style="background: var(--p-600); width: 2.75rem; height: 2.75rem;">T</div>
     </header>
@@ -52,21 +52,21 @@
       <div class="stat-card">
         <div class="stat-icon"><i class="fa-solid fa-layer-group"></i></div>
         <div class="stat-info">
-          <span class="stat-label">Active Modules</span>
+          <span class="stat-label">Classes</span>
           <span class="stat-value" id="statMyClasses">0</span>
         </div>
       </div>
       <div class="stat-card">
         <div class="stat-icon"><i class="fa-solid fa-chart-line"></i></div>
         <div class="stat-info">
-          <span class="stat-label">Avg Participation</span>
+          <span class="stat-label">Attendance</span>
           <span class="stat-value" id="statMyAttendance">0%</span>
         </div>
       </div>
       <div class="stat-card">
         <div class="stat-icon"><i class="fa-solid fa-star"></i></div>
         <div class="stat-info">
-          <span class="stat-label">Evaluations</span>
+          <span class="stat-label">Graded Items</span>
           <span class="stat-value" id="statMyGraded">0</span>
         </div>
       </div>
@@ -76,14 +76,14 @@
       <!-- Left: Resource List -->
       <div class="card" id="panelClasses">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-          <h3><i class="fa-solid fa-layer-group gradient-text"></i> Academic Modules</h3>
+          <h3><i class="fa-solid fa-layer-group gradient-text"></i> My Classes</h3>
           <div class="input-wrapper" style="width: 280px;">
             <i class="fa-solid fa-magnifying-glass input-icon"></i>
-            <input id="searchInput" class="input-field" placeholder="Filter classes...">
+            <input id="searchInput" class="input-field" placeholder="Search classes...">
           </div>
         </div>
         <div id="list" class="stagger-in"></div>
-        <div id="emptyMsg" class="text-center text-muted" style="padding: 3rem; display: none;">No modules assigned.
+        <div id="emptyMsg" class="text-center text-muted" style="padding: 3rem; display: none;">No classes assigned.
         </div>
       </div>
 
@@ -92,15 +92,15 @@
         <div class="card">
           <h3><i class="fa-solid fa-crosshairs gradient-text"></i> Live Session</h3>
           <div id="selectedBox" style="padding: 1.5rem 0; color: var(--text-muted); font-weight: 500;">
-            Select a module to initialize a live session.
+            Select a class to start.
           </div>
-          <button id="openBtn" class="btn-premium w-full" disabled>Initialize Session</button>
+          <button id="openBtn" class="btn-premium w-full" disabled>Start Class</button>
           <div id="status" class="error-toast" style="color: #10b981;"></div>
         </div>
 
         <div class="card">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-            <h3><i class="fa-solid fa-screwdriver-wrench gradient-text"></i> Toolset</h3>
+            <h3><i class="fa-solid fa-screwdriver-wrench gradient-text"></i> Tools</h3>
             <div style="display: flex; gap: 0.5rem;">
               <button id="tabExam" class="nav-link active"
                 style="padding: 0.5rem 0.75rem; margin: 0; font-size: 0.8rem;">Exams</button>
@@ -111,26 +111,26 @@
 
           <div id="examContainer">
             <div class="input-group">
-              <label>Agenda</label>
-              <input id="examTitle" class="input-field" placeholder="e.g. Unit 4 Test">
+              <label>Exam Name</label>
+              <input id="examTitle" class="input-field" placeholder="">
             </div>
             <div class="input-group" style="margin-bottom: 2rem;">
-              <label>System Date</label>
+              <label>Date</label>
               <input id="examDate" type="date" class="input-field">
             </div>
-            <button id="createExamBtn" class="btn-premium w-full">Deploy Assessment</button>
+            <button id="createExamBtn" class="btn-premium w-full">Add Exam</button>
           </div>
 
           <div id="homeworkContainer" style="display: none;">
             <div class="input-group">
-              <label>Assignment</label>
-              <input id="hwTitle" class="input-field" placeholder="e.g. Lab Report 2">
+              <label>Homework Name</label>
+              <input id="hwTitle" class="input-field" placeholder="">
             </div>
             <div class="input-group">
-              <label>Deadline</label>
+              <label>Due Date</label>
               <input id="hwDueDate" type="date" class="input-field">
             </div>
-            <button id="createHwBtn" class="btn-premium w-full">Publish Assignment</button>
+            <button id="createHwBtn" class="btn-premium w-full">Add Homework</button>
           </div>
 
           <div id="academicMsg" class="error-toast" style="color: #10b981; margin-top: 1rem;"></div>

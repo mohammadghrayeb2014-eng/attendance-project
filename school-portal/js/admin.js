@@ -355,13 +355,11 @@ function wireEvents() {
 
 async function loadDashboardStats() {
   try {
-    const [teachers, students, classes, attendance, attendTrend, gradeDist] = await Promise.all([
+    const [teachers, students, classes, attendance] = await Promise.all([
       fetchJSON(`${API}/teachers`),
       fetchJSON(`${API}/students`).catch(() => []),
       fetchJSON(`${API}/classes`),
-      fetchJSON(`${API}/attendance/records`).catch(() => []),
-      fetchJSON(`${API}/analytics/attendance_trend`).catch(() => []),
-      fetchJSON(`${API}/analytics/grade_distribution`).catch(() => [])
+      fetchJSON(`${API}/attendance/records`).catch(() => [])
     ]);
 
     document.getElementById("statTeachers").textContent = teachers.length;
@@ -379,64 +377,10 @@ async function loadDashboardStats() {
     });
     const avgAttendance = totalRecords ? Math.round((presentRecords / totalRecords) * 100) : 0;
     document.getElementById("statAttendance").textContent = `${avgAttendance}%`;
-
-    renderAdminCharts(attendTrend, gradeDist);
   } catch (e) {
     console.error("Failed to load dashboard stats:", e);
   }
 }
-
-function renderAdminCharts(attendTrend, gradeDist) {
-  // Line Chart for Trends
-  const trendCtx = document.getElementById('attendanceChart').getContext('2d');
-  new Chart(trendCtx, {
-    type: 'line',
-    data: {
-      labels: attendTrend.map(d => d.date),
-      datasets: [{
-        label: 'Presence Rate',
-        data: attendTrend.map(d => d.percentage),
-        borderColor: '#2563eb',
-        backgroundColor: 'rgba(37, 99, 235, 0.05)',
-        fill: true,
-        tension: 0.4,
-        borderWidth: 4,
-        pointRadius: 5,
-        pointHoverRadius: 8
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        y: { min: 0, max: 100, grid: { color: 'rgba(0,0,0,0.03)' } },
-        x: { grid: { display: false } }
-      }
-    }
-  });
-
-  // Doughnut Chart for Grades
-  const gradeCtx = document.getElementById('gradeChart').getContext('2d');
-  new Chart(gradeCtx, {
-    type: 'doughnut',
-    data: {
-      labels: gradeDist.map(d => d.label),
-      datasets: [{
-        data: gradeDist.map(d => d.count),
-        backgroundColor: ['#1e3a8a', '#2563eb', '#60a5fa', '#93c5fd', '#e2e8f0'],
-        borderWidth: 0
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      cutout: '75%',
-      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 20 } } }
-    }
-  });
-}
-
 document.addEventListener("DOMContentLoaded", async () => {
   wireEvents();
   await Promise.all([

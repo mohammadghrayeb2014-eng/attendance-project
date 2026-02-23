@@ -29,7 +29,7 @@
                     <i class="fa-solid fa-graduation-cap"></i>
                 </div>
                 <div>
-                    <h1 class="gradient-text" style="font-size: 2.25rem;">Academic Terminal</h1>
+                    <h1 class="gradient-text" style="font-size: 2.25rem;">Student Dashboard</h1>
                     <p class="text-muted" id="userName">Verifying student credentials...</p>
                 </div>
             </div>
@@ -42,38 +42,37 @@
         </header>
 
         <div style="display: grid; grid-template-columns: 3fr 2fr; gap: 2rem; margin-top: 3rem;">
-            <!-- Left: Performance Analytics -->
+            <!-- Left: Performance -->
             <div style="display: flex; flex-direction: column; gap: 2rem;">
                 <div class="card">
-                    <h3><i class="fa-solid fa-chart-line gradient-text"></i> Performance Analytics</h3>
+                    <h3><i class="fa-solid fa-chart-line gradient-text"></i> My Performance</h3>
                     <div style="height: 300px; padding: 1rem 0;">
                         <canvas id="studentPerformanceChart"></canvas>
                     </div>
                 </div>
 
                 <div class="card">
-                    <h3><i class="fa-solid fa-ranking-star gradient-text"></i> Evaluation History</h3>
+                    <h3><i class="fa-solid fa-ranking-star gradient-text"></i> Grade History</h3>
                     <div id="gradesList" class="stagger-in">
-                        <div class="text-center text-muted" style="padding: 3rem;">Loading academic records...</div>
+                        <div class="text-center text-muted" style="padding: 3rem;">Loading records...</div>
                     </div>
                 </div>
             </div>
 
-            <!-- Right: Activity & Presence -->
+            <!-- Right: Attendance -->
             <div style="display: flex; flex-direction: column; gap: 2rem;">
                 <div class="card">
-                    <h3><i class="fa-solid fa-calendar-check gradient-text"></i> Attendance Log</h3>
-                    <p class="text-muted mb-4" style="margin-bottom: 1.5rem;">Verified presence in daily modules.</p>
+                    <h3><i class="fa-solid fa-calendar-check gradient-text"></i> My Attendance</h3>
+                    <p class="text-muted mb-4" style="margin-bottom: 1.5rem;">View your daily attendance here.</p>
                     <div id="attendanceList" class="stagger-in">
                         <div class="text-center text-muted" style="padding: 2rem;">Retrieving logs...</div>
                     </div>
                 </div>
 
                 <div class="card" style="background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: white;">
-                    <h3 style="color: white;"><i class="fa-solid fa-shield-halved"></i> Institutional Security</h3>
+                    <h3 style="color: white;"><i class="fa-solid fa-shield-halved"></i> Security</h3>
                     <p style="font-size: 0.875rem; opacity: 0.9; line-height: 1.6;">
-                        Your session is secured with AES-256 encryption. All academic evaluations and attendance records
-                        are cryptographically signed.
+                        Your session is secure. All grades and attendance records are protected.
                     </p>
                 </div>
             </div>

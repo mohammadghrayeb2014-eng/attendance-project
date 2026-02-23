@@ -10,7 +10,6 @@
     rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="css/style.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script defer src="js/auth.js"></script>
   <script defer src="js/admin.js"></script>
 </head>
@@ -31,14 +30,14 @@
     </div>
     <nav class="nav-links">
       <a href="#" class="nav-link active" id="navDashboard"><i class="fa-solid fa-gauge-high"></i> Overview</a>
-      <a href="#" class="nav-link" id="navTeachers"><i class="fa-solid fa-chalkboard-user"></i> Faculty</a>
+      <a href="#" class="nav-link" id="navTeachers"><i class="fa-solid fa-chalkboard-user"></i> Teachers</a>
       <a href="#" class="nav-link" id="navStudents"><i class="fa-solid fa-user-graduate"></i> Students</a>
-      <a href="#" class="nav-link" id="navClasses"><i class="fa-solid fa-users-rectangle"></i> Classrooms</a>
-      <a href="#" class="nav-link" id="navSubjects"><i class="fa-solid fa-book-open"></i> Curriculum</a>
-      <a href="#" class="nav-link" id="navAssignments"><i class="fa-solid fa-calendar-check"></i> Assign</a>
+      <a href="#" class="nav-link" id="navClasses"><i class="fa-solid fa-users-rectangle"></i> Classes</a>
+      <a href="#" class="nav-link" id="navSubjects"><i class="fa-solid fa-book-open"></i> Subjects</a>
+      <a href="#" class="nav-link" id="navAssignments"><i class="fa-solid fa-calendar-check"></i> Assignments</a>
       <div style="margin-top: auto;">
-        <a href="#" id="logoutBtn" class="nav-link" style="color: #ef4444;"><i
-            class="fa-solid fa-right-from-bracket"></i> Sign Out</a>
+        <a href="#" id="logoutBtn" class="nav-link" style="color: #ef4444;"><i class="fa-solid fa-power-off"></i>
+          Exit</a>
       </div>
     </nav>
   </aside>
@@ -46,7 +45,7 @@
   <main class="main-content">
     <header class="header">
       <div>
-        <h1 class="gradient-text" style="font-size: 2.25rem; margin-bottom: 0.5rem;">Academic Oversight</h1>
+        <h1 class="gradient-text" style="font-size: 2.25rem; margin-bottom: 0.5rem;">Admin Dashboard</h1>
         <p class="text-muted" id="who">Logged in as: ...</p>
       </div>
       <div class="user-profile" style="display: flex; align-items: center; gap: 1rem;">
@@ -73,60 +72,45 @@
       </div>
     </div>
 
-    <!-- Analytical Charts -->
-    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; margin-bottom: 3rem;">
-      <div class="card" style="margin-bottom: 0;">
-        <h3><i class="fa-solid fa-chart-line gradient-text"></i> Institutional Trends</h3>
-        <div style="height: 300px;">
-          <canvas id="attendanceChart"></canvas>
-        </div>
-      </div>
-      <div class="card" style="margin-bottom: 0;">
-        <h3><i class="fa-solid fa-chart-pie gradient-text"></i> Grade Spread</h3>
-        <div style="height: 300px;">
-          <canvas id="gradeChart"></canvas>
-        </div>
-      </div>
-    </div>
 
     <!-- Interface Content Grid -->
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
       <!-- Teachers Section -->
       <div class="card" id="cardTeachers">
-        <h3><i class="fa-solid fa-user-plus gradient-text"></i> Register Faculty</h3>
+        <h3><i class="fa-solid fa-user-plus gradient-text"></i> Register Teacher</h3>
         <div class="input-group">
           <label>Username</label>
           <div class="input-wrapper">
             <i class="fa-solid fa-user input-icon"></i>
-            <input id="newTeacherUsername" class="input-field" placeholder="e.g. t_doe">
+            <input id="newTeacherUsername" class="input-field" placeholder="">
           </div>
         </div>
         <div class="input-group">
           <label>Full Name</label>
           <div class="input-wrapper">
             <i class="fa-solid fa-signature input-icon"></i>
-            <input id="newTeacherName" class="input-field" placeholder="e.g. Dr. John Doe">
+            <input id="newTeacherName" class="input-field" placeholder="">
           </div>
         </div>
-        <button id="createTeacherBtn" class="btn-premium w-full">Provision Account</button>
+        <button id="createTeacherBtn" class="btn-premium w-full">Create Account</button>
         <div id="teacherCreatedMsg" class="error-toast" style="color: #10b981;"></div>
       </div>
 
       <!-- Students Section -->
       <div class="card" id="cardStudents">
-        <h3><i class="fa-solid fa-user-graduate gradient-text"></i> Student Enrollment</h3>
+        <h3><i class="fa-solid fa-user-graduate gradient-text"></i> Register Student</h3>
         <div class="input-group">
-          <label>Student ID</label>
+          <label>Username</label>
           <div class="input-wrapper">
             <i class="fa-solid fa-id-card input-icon"></i>
-            <input id="newStudentUsername" class="input-field" placeholder="e.g. s_12345">
+            <input id="newStudentUsername" class="input-field" placeholder="">
           </div>
         </div>
         <div class="input-group">
           <label>Legal Name</label>
           <div class="input-wrapper">
             <i class="fa-solid fa-signature input-icon"></i>
-            <input id="newStudentName" class="input-field" placeholder="e.g. Jane Smith">
+            <input id="newStudentName" class="input-field" placeholder="">
           </div>
         </div>
         <button id="createStudentBtn" class="btn-premium w-full">Enroll Student</button>
@@ -135,10 +119,10 @@
 
       <!-- Class Management -->
       <div class="card" id="cardClasses">
-        <h3><i class="fa-solid fa-users-rectangle gradient-text"></i> Define Classrooms</h3>
+        <h3><i class="fa-solid fa-users-rectangle gradient-text"></i> Create Class</h3>
         <div class="input-group">
-          <label>Class Identifier</label>
-          <input id="className" class="input-field" placeholder="e.g. Grade 11-B">
+          <label>Class Name</label>
+          <input id="className" class="input-field" placeholder="">
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
           <div class="input-group">
@@ -155,16 +139,16 @@
 
       <!-- Subjects & Assigning -->
       <div class="card" id="cardSubjects">
-        <h3><i class="fa-solid fa-book-open gradient-text"></i> Course Map</h3>
+        <h3><i class="fa-solid fa-book-open gradient-text"></i> Subjects</h3>
         <div class="input-group">
-          <label>Course Title</label>
-          <input id="subjectName" class="input-field" placeholder="e.g. Advanced Physics">
+          <label>Subject Name</label>
+          <input id="subjectName" class="input-field" placeholder="">
         </div>
-        <button id="addSubjectBtn" class="btn-premium w-full">Add Course</button>
+        <button id="addSubjectBtn" class="btn-premium w-full">Add Subject</button>
       </div>
 
       <div class="card" id="cardAssignments" style="grid-column: span 2;">
-        <h3><i class="fa-solid fa-link gradient-text"></i> System Assignment</h3>
+        <h3><i class="fa-solid fa-link gradient-text"></i> Assign Teacher to Class</h3>
         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem;">
           <div class="input-group">
             <label>Instructor</label>
@@ -179,7 +163,7 @@
             <select id="subjectSelect" class="input-field"></select>
           </div>
         </div>
-        <button id="assignBtn" class="btn-premium w-full">Execute Link</button>
+        <button id="assignBtn" class="btn-premium w-full">Save Assignment</button>
         <div id="adminMsg" class="error-toast"></div>
       </div>
     </div>
@@ -189,7 +173,7 @@
     document.addEventListener("DOMContentLoaded", () => {
       protectPage("admin");
       const user = getCurrentUser();
-      if (user) document.getElementById("who").textContent = "Administrative Session: " + user.username;
+      if (user) document.getElementById("who").textContent = "Welcome, " + user.username;
       document.getElementById("logoutBtn").addEventListener("click", (e) => { e.preventDefault(); logout(); });
     });
   </script>

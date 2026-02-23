@@ -33,8 +33,8 @@ try:
     db = mongo_client[mongo_db_name]
     print("[OK] MongoDB connected successfully")
 except Exception as e:
-    # Don't crash in serverless environments; fall back to JSON data files (read-only)
-    print("[WARN] MongoDB unavailable at startup, falling back to JSON files. Error:", e)
+    print("[ERROR] MongoDB unavailable at startup. Ensure MONGO_URI is set and reachable. Error:", e)
+    raise SystemExit("MongoDB connection required. Set MONGO_URI and ensure MongoDB is reachable.")
 
 
 # --------------------
@@ -42,58 +42,32 @@ except Exception as e:
 # --------------------
 def read_collection(collection_name: str, query: dict = None) -> list:
     """Read documents from MongoDB if available, otherwise from backend JSON files."""
-    if db:
+    if db is not None:
         col = db[collection_name]
         return list(col.find(query or {}, {"_id": False}))
 
-    # Fallback: read from backend/data/<collection>.json
-    data_file = BASE_DIR / "data" / f"{collection_name}.json"
-    if not data_file.exists():
-        return []
-    try:
-        return json.loads(data_file.read_text(encoding="utf-8"))
-    except Exception:
-        return []
+    raise RuntimeError("MongoDB not connected. Set MONGO_URI and ensure DB is reachable.")
 
 
 def upsert_document(collection_name: str, doc: dict):
     """Insert a single document."""
-    if db:
+    if db is not None:
         db[collection_name].insert_one({k: v for k, v in doc.items() if k != "_id"})
         return
 
-    # Fallback: append to JSON file (best-effort). In serverless/read-only env this may fail.
-    data_file = BASE_DIR / "data" / f"{collection_name}.json"
-    items = []
-    if data_file.exists():
-        try:
-            items = json.loads(data_file.read_text(encoding="utf-8")) or []
-        except Exception:
-            items = []
-    items.append({k: v for k, v in doc.items() if k != "_id"})
-    try:
-        data_file.write_text(json.dumps(items, indent=2), encoding="utf-8")
-    except Exception:
-        # If writing fails (e.g., read-only filesystem), raise to let caller handle
-        raise RuntimeError("Database not available and filesystem not writable")
+    raise RuntimeError("MongoDB not connected. Set MONGO_URI and ensure DB is reachable.")
 
 
 def replace_collection(collection_name: str, data: list):
     """Replace an entire collection with new data (delete all then insert)."""
-    if db:
+    if db is not None:
         col = db[collection_name]
         col.delete_many({})
         if data:
             col.insert_many([{k: v for k, v in d.items() if k != "_id"} for d in data])
         return
 
-    
-    data_file = BASE_DIR / "data" / f"{collection_name}.json"
-    try:
-        cleaned = [{k: v for k, v in d.items() if k != "_id"} for d in (data or [])]
-        data_file.write_text(json.dumps(cleaned, indent=2), encoding="utf-8")
-    except Exception:
-        raise RuntimeError("Database not available and filesystem not writable")
+    raise RuntimeError("MongoDB not connected. Set MONGO_URI and ensure DB is reachable.")
 
 
 def next_id(items: list) -> int:
@@ -552,16 +526,35 @@ def api_upload_video():
 
 @app.get("/api/attendance/history")
 def api_get_attendance_history():
-    PROJECT_ROOT = PARENT_DIR.parent
-    master_path = PROJECT_ROOT / "output" / "attendance" / "master_attendance.csv"
-    if not master_path.exists():
+    """Returns pivoted attendance history from MongoDB (name vs dates)."""
+    sessions = read_collection("attendance")
+    if not sessions:
         return jsonify([])
-    try:
-        with open(master_path, mode="r", encoding="utf-8") as f:
-            return jsonify(list(csv.DictReader(f)))
-    except Exception as e:
-        print(f"Error reading history: {e}")
-        return jsonify([])
+
+    # Pivot logic: name -> { date1: status, date2: status, ... }
+    students_data = {}
+    all_dates = set()
+
+    for s in sessions:
+        date = s.get("date", "Unknown").split()[0]
+        all_dates.add(date)
+        for r in s.get("records", []):
+            name = r.get("name")
+            if name not in students_data:
+                students_data[name] = {"name": name}
+            students_data[name][date] = "YES" if r.get("status") == "Present" else "NO"
+
+    # Ensure all students have a value for all dates
+    sorted_dates = sorted(list(all_dates))
+    result = []
+    for name in sorted(students_data.keys()):
+        row = students_data[name]
+        for d in sorted_dates:
+            if d not in row:
+                row[d] = "NO"
+        result.append(row)
+
+    return jsonify(result)
 
 
 @app.post("/api/attendance/save")

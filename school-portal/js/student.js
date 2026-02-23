@@ -31,7 +31,12 @@ async function loadStudentData() {
         ]);
 
         const subjectMap = new Map(subjects.map(s => [s.id, s.name]));
-        const myGrades = allGrades.filter(g => g.student_name === user.name || g.student_name === user.username);
+        const studentName = (user.name || "").toLowerCase();
+        const studentUser = (user.username || "").toLowerCase();
+        const myGrades = allGrades.filter(g =>
+            (g.student_name || "").toLowerCase() === studentName ||
+            (g.student_name || "").toLowerCase() === studentUser
+        );
         const gradeListEl = document.getElementById("gradesList");
         gradeListEl.innerHTML = "";
 
@@ -73,7 +78,10 @@ async function loadStudentData() {
         let count = 0;
 
         recentAtt.forEach(session => {
-            const me = session.records.find(r => r.name === user.name || r.name === user.username);
+            const me = (session.records || []).find(r =>
+                (r.name || "").toLowerCase() === studentName ||
+                (r.name || "").toLowerCase() === studentUser
+            );
             if (me && count < 10) {
                 count++;
                 const div = el("div", "item", "");

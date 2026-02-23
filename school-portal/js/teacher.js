@@ -113,7 +113,7 @@ function applySearch() {
 
 async function loadTeacherAssignments() {
   const user = getCurrentUser(); // from auth.js
-  const username = user.username;
+  const username = (user.username || "").toLowerCase();
 
   const [assignments, classes, subjects] = await Promise.all([
     fetchJSON(`${API}/assignments`),
@@ -125,7 +125,7 @@ async function loadTeacherAssignments() {
   const subjectById = new Map(subjects.map((s) => [s.id, s]));
 
   // Only assignments belonging to this teacher
-  const mine = assignments.filter((a) => a.teacher_username === username);
+  const mine = assignments.filter((a) => (a.teacher_username || "").toLowerCase() === username);
 
   // Decorate with names + seat sizes
   allItems = mine.map((a) => {
@@ -395,17 +395,17 @@ async function loadGradingList() {
 
     const tbody = document.getElementById("gradingTableBody");
     students.sort().forEach(name => {
-      const g = existingGrades.find(x => x.student_name === name) || {};
+      const g = existingGrades.find(x => (x.student_name || "").toLowerCase() === (name || "").toLowerCase()) || {};
       const tr = document.createElement("tr");
       tr.style.borderBottom = "1px solid rgba(255,255,255,0.05)";
       tr.innerHTML = `
         <td style="padding: 0.75rem;">${name}</td>
         <td style="padding: 0.75rem;">
-          <input type="number" class="grade-score" data-student="${name}" value="${g.score || ""}" 
+          <input type="number" class="grade-score" data-student="${name}" value="${g.score || ""}"
                  style="margin-bottom:0; padding: 0.3rem; font-size: 0.8rem; width: 60px;">
         </td>
         <td style="padding: 0.75rem;">
-          <input type="text" class="grade-comment" data-student="${name}" value="${g.comment || ""}" 
+          <input type="text" class="grade-comment" data-student="${name}" value="${g.comment || ""}"
                  style="margin-bottom:0; padding: 0.3rem; font-size: 0.8rem;" placeholder="Note...">
         </td>
       `;
@@ -510,7 +510,7 @@ async function loadGradebook() {
 
       items.forEach(item => {
         const grade = allGrades.find(g =>
-          g.student_name === name &&
+          (g.student_name || "").toLowerCase() === (name || "").toLowerCase() &&
           g.item_type === item.type &&
           String(g.item_id) === String(item.id)
         );
