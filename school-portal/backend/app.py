@@ -29,9 +29,16 @@ try:
     # Use certifi for cloud SSL if needed, otherwise standard
     import certifi
     ca = certifi.where()
-    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tlsCAFile=ca)
+    # Adding tls=True and tlsAllowInvalidCertificates=True as the "Global Fix"
+    mongo_client = MongoClient(
+        MONGO_URI, 
+        serverSelectionTimeoutMS=10000, 
+        tlsCAFile=ca,
+        tls=True,
+        tlsAllowInvalidCertificates=True
+    )
 except ImportError:
-    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=10000)
 
 db = None
 try:
