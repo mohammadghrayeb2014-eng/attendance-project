@@ -26,16 +26,60 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
 mongo_db_name = os.getenv("MONGO_DB_NAME", "attendance_db")
 db = None
-try:
-    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    # attempt a ping to see if Mongo is reachable
-    mongo_client.admin.command("ping")
-    db = mongo_client[mongo_db_name]
-    print("[OK] MongoDB connected successfully")
-except Exception as e:
-    print("[ERROR] MongoDB unavailable at startup. Ensure MONGO_URI is set and reachable. Error:", e)
-    raise SystemExit("MongoDB connection required. Set MONGO_URI and ensure MongoDB is reachable.")
+def read_collection(collection_name: str, query: dict = None) -> list:
+    # Mongo mode
+    if db is not None:
+        col = db[collection_name]
+        return list(col.find(query or {}, {"_id": False}))
 
+    # JSON fallback mode
+    filename = COLLECTION_FILE.get(collection_name)
+    if not filename:
+        return []
+    items = read_json_file(filename)
+
+    if not query:
+        return items
+
+    # simple filter: exact match on keys
+    def match(doc):
+        for k, v in query.items():
+            if doc.get(k) != v:
+                return False
+        return True
+
+    return [d for d in items if match(d)]
+
+
+def upsert_document(collection_name: str, doc: dict):
+    # Mongo mode
+    if db is not None:
+        db[collection_name].insert_one({k: v for k, v in doc.items() if k != "_id"})
+        return
+
+    # JSON fallback mode
+    filename = COLLECTION_FILE.get(collection_name)
+    if not filename:
+        return
+    items = read_json_file(filename)
+    items.append(doc)
+    write_json_file(filename, items)
+
+
+def replace_collection(collection_name: str, data: list):
+    # Mongo mode
+    if db is not None:
+        col = db[collection_name]
+        col.delete_many({})
+        if data:
+            col.insert_many([{k: v for k, v in d.items() if k != "_id"} for d in data])
+        return
+
+    # JSON fallback mode
+    filename = COLLECTION_FILE.get(collection_name)
+    if not filename:
+        return
+    write_json_file(filename, data)
 
 # --------------------
 # DB helpers – MongoDB only, no JSON fallback
