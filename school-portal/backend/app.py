@@ -22,36 +22,19 @@ app = Flask(__name__, static_folder=str(PARENT_DIR), static_url_path="")
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # MongoDB setup
-MONGO_URI = os.getenv("MONGO_URI") or os.getenv("MONGO_URL") or "mongodb://localhost:27017/attendance_db"
-mongo_db_name = os.getenv("MONGO_DB_NAME")
-
-try:
-    # Use certifi for cloud SSL if needed, otherwise standard
-    import certifi
-    ca = certifi.where()
-    # Adding tls=True and tlsAllowInvalidCertificates=True as the "Global Fix"
-    mongo_client = MongoClient(
-        MONGO_URI, 
-        serverSelectionTimeoutMS=10000, 
-        tlsCAFile=ca,
-        tls=True,
-        tlsAllowInvalidCertificates=True
-    )
-except ImportError:
-    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=10000)
-
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+mongo_db_name = os.getenv("MONGO_DB_NAME", "attendance_db")
 db = None
 try:
-    # If DB name isn't a separate variable, MongoClient can get it from the URI
-    # or we default to 'attendance_db' if the URI is just the host
-    active_db_name = mongo_db_name or mongo_client.get_default_database().name or "attendance_db"
+    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    # attempt a ping to see if Mongo is reachable
     mongo_client.admin.command("ping")
-    db = mongo_client[active_db_name]
-    print(f"[OK] MongoDB connected to database: {active_db_name}")
+    db = mongo_client[mongo_db_name]
+    print("[OK] MongoDB connected successfully")
 except Exception as e:
-    print("[ERROR] MongoDB connection failed:", e)
-    # Default fallback for local testing
-    db = mongo_client["attendance_db"]
+    print("[ERROR] MongoDB unavailable at startup. Ensure MONGO_URI is set and reachable. Error:", e)
+    raise SystemExit("MongoDB connection required. Set MONGO_URI and ensure MongoDB is reachable.")
 
 
 # --------------------
@@ -138,30 +121,11 @@ def api_login():
 
 
 # --------------------
-# HEALTH CHECK & INIT
+# HEALTH CHECK
 # --------------------
 @app.get("/api/health")
 def api_health():
     return jsonify({"status": "ok"})
-
-@app.get("/api/init_admin")
-def init_admin():
-    try:
-        pw_hash = bcrypt.hashpw("admin123".encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-        db["users"].update_one(
-            {"username": "admin"},
-            {"$set": {
-                "id": 1,
-                "username": "admin",
-                "role": "admin",
-                "name": "Administrator",
-                "password_hash": pw_hash
-            }},
-            upsert=True
-        )
-        return "✅ Admin account created/reset to admin123! Go back to login."
-    except Exception as e:
-        return f"❌ DATABASE ERROR: {str(e)}"
 
 
 # --------------------
@@ -562,35 +526,16 @@ def api_upload_video():
 
 @app.get("/api/attendance/history")
 def api_get_attendance_history():
-    """Returns pivoted attendance history from MongoDB (name vs dates)."""
-    sessions = read_collection("attendance")
-    if not sessions:
+    PROJECT_ROOT = PARENT_DIR.parent
+    master_path = PROJECT_ROOT / "output" / "attendance" / "master_attendance.csv"
+    if not master_path.exists():
         return jsonify([])
-
-    # Pivot logic: name -> { date1: status, date2: status, ... }
-    students_data = {}
-    all_dates = set()
-
-    for s in sessions:
-        date = s.get("date", "Unknown").split()[0]
-        all_dates.add(date)
-        for r in s.get("records", []):
-            name = r.get("name")
-            if name not in students_data:
-                students_data[name] = {"name": name}
-            students_data[name][date] = "YES" if r.get("status") == "Present" else "NO"
-
-    # Ensure all students have a value for all dates
-    sorted_dates = sorted(list(all_dates))
-    result = []
-    for name in sorted(students_data.keys()):
-        row = students_data[name]
-        for d in sorted_dates:
-            if d not in row:
-                row[d] = "NO"
-        result.append(row)
-
-    return jsonify(result)
+    try:
+        with open(master_path, mode="r", encoding="utf-8") as f:
+            return jsonify(list(csv.DictReader(f)))
+    except Exception as e:
+        print(f"Error reading history: {e}")
+        return jsonify([])
 
 
 @app.post("/api/attendance/save")
