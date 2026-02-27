@@ -2,134 +2,22 @@
   {
     "id": 1,
     "username": "admin",
-    "role": "admin",
     "name": "Admin",
-    "password_hash": "$2b$12$4KrlXF6cn6TLw0VERYPhLefqVG.fOUhPQnNlPlT9AHC7W6DPxQQEa"
+    "role": "admin",
+    "password_hash": "$2b$12$F7TIBy6HaSTGFbIL44BS.eyrAsvmC5vNnty/Gn/7O47O34FrPHl8e"
   },
   {
     "id": 2,
-    "username": "teacher4495",
+    "username": "344",
     "role": "teacher",
-    "name": "Teacher 4495",
-    "password_hash": "$2b$12$mpN7GaQ3eBpZ0tLgCIHTIuyCOw3WQ03rmLTyqzswkRjixLOyRsBZa"
+    "name": "344",
+    "password_hash": "$2b$12$8cMq9Mw3AmoLPYSVvOM5iO15.qHJcapK7JMgdOvGlbWxJRvVdoYCa"
   },
   {
     "id": 3,
-    "username": "ryjyrjy",
-    "role": "teacher",
-    "name": "ryjyr",
-    "password_hash": "$2b$12$bmKmUxjBbarzyBSJP3RP6uiEk0fq9pI6Ml7fNcPW119UKSXStwLCK"
-  },
-  {
-    "id": 4,
-    "username": "ryjyrjyk",
-    "role": "teacher",
-    "name": "ryjyr7",
-    "password_hash": "$2b$12$jgCdB4fwvjTfoLgYd.QWGOMczheKpSf1t2lWUqT5weaLjVXlVoPKC"
-  },
-  {
-    "id": 5,
-    "username": "ry",
-    "role": "teacher",
-    "name": "ry",
-    "password_hash": "$2b$12$fjq2kZ/eJSf.MVX2M9Xt3e97I/XRAYFUPKLxIYS.kBKIbfuxmuqPS"
-  },
-  {
-    "id": 6,
-    "username": "ry1",
-    "role": "teacher",
-    "name": "ry1",
-    "password_hash": "$2b$12$dDSmdxCbMGYorTJqJmyat.Ec8MxSpmxz1J6Li49OEpJ30RwQKq3De"
-  },
-  {
-    "id": 7,
-    "username": "ry2",
-    "role": "teacher",
-    "name": "ry2",
-    "password_hash": "$2b$12$c4U.banU3OEIDuSlJpz3DuMcWcX0znWEYlOr8B2NfEqneYRO0wiTC"
-  },
-  {
-    "id": 8,
-    "username": "ahmad",
-    "role": "teacher",
-    "name": "ahmad",
-    "password_hash": "$2b$12$narZKqASNu4vS/gImb1o8OmfhrrYSPOd1EcpeaowGQm7wupA1fFmC"
-  },
-  {
-    "id": 9,
-    "username": "Ahmad",
-    "role": "teacher",
-    "name": "Ahmad",
-    "password_hash": "$2b$12$J0KdPbRL9Q3nNGerLNJMfOeZDxZv78xza8Hqp5Kz/nBmhXHOCQMua"
-  },
-  {
-    "id": 10,
-    "username": "rt",
-    "role": "teacher",
-    "name": "rt",
-    "password_hash": "$2b$12$8YT2db/h/w52d6pTZVM6yuBIFZqFQLD67F9CITC0Qbo1PAlCwaByC"
-  },
-  {
-    "id": 11,
-    "username": "ok",
-    "role": "teacher",
-    "name": "ok",
-    "password_hash": "$2b$12$OAcXxzGdEf3f5EtRd6wEu.TZ7TNd2pYkbbJGqKF/Itg7qwolWrvze"
-  },
-  {
-    "id": 12,
-    "username": "ok1",
-    "role": "teacher",
-    "name": "ok1",
-    "password_hash": "$2b$12$8WzDOcw3xB/JH2WDrwq.ZeU3CqRBrhmv0TZO95VNP0JpQZO8cMP1G"
-  },
-  {
-    "id": 13,
-    "username": "nour",
-    "role": "teacher",
-    "name": "nour",
-    "password_hash": "$2b$12$a4eTHO7Bxwg.a/xCVS01Qe.KpN1DRjhuqAdApYVkgX.w6.rwJf1ba"
-  },
-  {
-    "id": 14,
-    "username": "razan",
-    "role": "teacher",
-    "name": "razan",
-    "password_hash": "$2b$12$j6g3CLf8PDIyv1ZHqmQSne16UHfS5z6FXqyY0H9Hmfc7wl8N8bxta"
-  },
-  {
-    "id": 15,
-    "username": "noor",
-    "role": "teacher",
-    "name": "noor",
-    "password_hash": "$2b$12$OXtT4vDYupR29eVtw.XOxeVTMpo8lIGAT3NhIOnw5RK7YNGqQEyKu"
-  },
-  {
-    "id": 16,
-    "username": "t",
-    "role": "teacher",
-    "name": "t",
-    "password_hash": "$2b$12$A3RtDujBazCg7/pXoAQk7uVecZOqPxtZu4jtLbUVzkOlSkRlM/8tW"
-  },
-  {
-    "id": 17,
-    "username": "b",
-    "role": "teacher",
-    "name": "b",
-    "password_hash": "$2b$12$u8fRWBv.xEU5nUKM65UlCurT2YBsdOxqFGKhILMjb5T7xl6offCEa"
-  },
-  {
-    "id": 18,
-    "username": "student1",
+    "username": "po",
     "role": "student",
-    "name": "Ali",
-    "password_hash": "$2b$12$Onao8kf5blkoDjN/.j6wcuLUt08M9H65Wtkm7co00SQ0b9CRLFnRC"
-  },
-  {
-    "id": 19,
-    "username": "student2",
-    "role": "student",
-    "name": "student2",
-    "password_hash": "$2b$12$Hdan6hBuGx/igo5zc7/tluLm/bImGYU7Z/nqVBjTafmvrGJd/O5x."
+    "name": "po",
+    "password_hash": "$2b$12$WFUK8EUaZpl4Rmz8ksGuc.2UclNeiGpcjzqM0.USzpfVHjV0rajT6"
   }
 ]

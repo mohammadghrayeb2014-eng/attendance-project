@@ -21,27 +21,33 @@ PARENT_DIR = BASE_DIR.parent
 app = Flask(__name__, static_folder=str(PARENT_DIR), static_url_path="")
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# MongoDB setup
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
-mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-mongo_db_name = os.getenv("MONGO_DB_NAME", "attendance_db")
-db = None
-def read_collection(collection_name: str, query: dict = None) -> list:
-    # Mongo mode
-    if db is not None:
-        col = db[collection_name]
-        return list(col.find(query or {}, {"_id": False}))
+# --------------------
+# Storage setup (Mongo OR local JSON)
+# --------------------
+DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)
 
-    # JSON fallback mode
-    filename = COLLECTION_FILE.get(collection_name)
-    if not filename:
+def _json_path(name: str) -> Path:
+    return DATA_DIR / f"{name}.json"
+
+def _read_json_collection(name: str) -> list:
+    p = _json_path(name)
+    if not p.exists():
         return []
-    items = read_json_file(filename)
+    with open(p, "r", encoding="utf-8") as f:
+        return json.load(f)
 
+def _write_json_collection(name: str, data: list):
+    p = _json_path(name)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+# FIX 1: _filter_json was defined inside the else block (wrong indentation / scope)
+# and referenced `query` from outer scope without being passed it. Moved here as a proper function.
+def _filter_json(items: list, query: dict) -> list:
     if not query:
         return items
 
-    # simple filter: exact match on keys
     def match(doc):
         for k, v in query.items():
             if doc.get(k) != v:
@@ -51,68 +57,57 @@ def read_collection(collection_name: str, query: dict = None) -> list:
     return [d for d in items if match(d)]
 
 
-def upsert_document(collection_name: str, doc: dict):
-    # Mongo mode
-    if db is not None:
-        db[collection_name].insert_one({k: v for k, v in doc.items() if k != "_id"})
-        return
+USE_MONGO = False
+db = None
 
-    # JSON fallback mode
-    filename = COLLECTION_FILE.get(collection_name)
-    if not filename:
-        return
-    items = read_json_file(filename)
-    items.append(doc)
-    write_json_file(filename, items)
+MONGO_URI = os.getenv("MONGO_URI", "").strip()
+mongo_db_name = os.getenv("MONGO_DB_NAME", "attendance_db").strip()
 
+if MONGO_URI:
+    try:
+        mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True)
+        mongo_client.admin.command("ping")
+        db = mongo_client[mongo_db_name]
+        USE_MONGO = True
+        print("[OK] MongoDB connected successfully")
+    except Exception as e:
+        print("[WARN] MongoDB not available, using local JSON storage instead. Error:", e)
+else:
+    print("[INFO] No MONGO_URI set, using local JSON storage.")
 
-def replace_collection(collection_name: str, data: list):
-    # Mongo mode
-    if db is not None:
-        col = db[collection_name]
-        col.delete_many({})
-        if data:
-            col.insert_many([{k: v for k, v in d.items() if k != "_id"} for d in data])
-        return
-
-    # JSON fallback mode
-    filename = COLLECTION_FILE.get(collection_name)
-    if not filename:
-        return
-    write_json_file(filename, data)
 
 # --------------------
-# DB helpers – MongoDB only, no JSON fallback
+# DB helpers (Mongo if available, else JSON)
 # --------------------
 def read_collection(collection_name: str, query: dict = None) -> list:
-    """Read documents from MongoDB if available, otherwise from backend JSON files."""
-    if db is not None:
+    if USE_MONGO and db is not None:
         col = db[collection_name]
         return list(col.find(query or {}, {"_id": False}))
 
-    raise RuntimeError("MongoDB not connected. Set MONGO_URI and ensure DB is reachable.")
-
+    # FIX 2: JSON fallback now properly uses _filter_json instead of silently ignoring query
+    items = _read_json_collection(collection_name)
+    if query:
+        return _filter_json(items, query)
+    return items
 
 def upsert_document(collection_name: str, doc: dict):
-    """Insert a single document."""
-    if db is not None:
+    if USE_MONGO and db is not None:
         db[collection_name].insert_one({k: v for k, v in doc.items() if k != "_id"})
         return
 
-    raise RuntimeError("MongoDB not connected. Set MONGO_URI and ensure DB is reachable.")
-
+    items = _read_json_collection(collection_name)
+    items.append(doc)
+    _write_json_collection(collection_name, items)
 
 def replace_collection(collection_name: str, data: list):
-    """Replace an entire collection with new data (delete all then insert)."""
-    if db is not None:
+    if USE_MONGO and db is not None:
         col = db[collection_name]
         col.delete_many({})
         if data:
             col.insert_many([{k: v for k, v in d.items() if k != "_id"} for d in data])
         return
 
-    raise RuntimeError("MongoDB not connected. Set MONGO_URI and ensure DB is reachable.")
-
+    _write_json_collection(collection_name, data)
 
 def next_id(items: list) -> int:
     return max((item.get("id", 0) for item in items), default=0) + 1
@@ -135,7 +130,6 @@ def api_login():
     if not username or not password:
         return jsonify({"error": "Username and password required"}), 400
 
-    # Get all users and find case-insensitive match
     all_users = read_collection("users")
     user = next((u for u in all_users if u.get("username", "").lower() == username), None)
 
@@ -148,12 +142,13 @@ def api_login():
 
     try:
         pw_hash_bytes = raw_pw_hash.encode("utf-8") if isinstance(raw_pw_hash, str) else raw_pw_hash
-        match = bcrypt.checkpw(password.encode("utf-8"), pw_hash_bytes)
+        # FIX 3: renamed local variable `match` to `pw_match` to avoid shadowing the built-in
+        pw_match = bcrypt.checkpw(password.encode("utf-8"), pw_hash_bytes)
     except Exception as e:
         print(f"bcrypt error for {username}: {e}")
         return jsonify({"error": "Authentication error"}), 500
 
-    if not match:
+    if not pw_match:
         return jsonify({"error": "Invalid credentials"}), 401
 
     return jsonify({
@@ -210,14 +205,13 @@ def admin_create_teacher():
     if not username:
         return jsonify({"error": "Username required"}), 400
 
-    # Check for case-insensitive duplicate
     all_users = read_collection("users")
     if any(u.get("username", "").lower() == username for u in all_users):
         return jsonify({"error": "Username already exists"}), 400
 
     plain_password = generate_password()
     pw_hash = bcrypt.hashpw(plain_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    all_users = read_collection("users")
+    # FIX 4: removed redundant second read_collection("users") call; reuse all_users already fetched
     new_user = {
         "id": next_id(all_users),
         "username": username,
@@ -238,14 +232,13 @@ def admin_create_student():
     if not username:
         return jsonify({"error": "Username required"}), 400
 
-    # Check for case-insensitive duplicate
     all_users = read_collection("users")
     if any(u.get("username", "").lower() == username for u in all_users):
         return jsonify({"error": "Username already exists"}), 400
 
     plain_password = generate_password()
     pw_hash = bcrypt.hashpw(plain_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    all_users = read_collection("users")
+    # FIX 4 (same): removed redundant second read_collection("users") call
     new_user = {
         "id": next_id(all_users),
         "username": username,
@@ -461,8 +454,14 @@ def api_save_grades():
     if not item_id or not item_type:
         return jsonify({"error": "item_id and item_type required"}), 400
 
-    # Remove existing grades for this item then batch insert new ones
-    db["grades"].delete_many({"item_id": item_id, "item_type": item_type})
+    # FIX 5: grades endpoints used `db` directly (MongoDB-only), crashing when USE_MONGO=False.
+    # Rewritten to use the read/replace_collection helpers so JSON fallback works too.
+    all_grades = read_collection("grades")
+    # Remove existing grades for this item
+    all_grades = [
+        g for g in all_grades
+        if not (g.get("item_id") == item_id and g.get("item_type") == item_type)
+    ]
     new_docs = [
         {
             "item_id": item_id,
@@ -474,8 +473,8 @@ def api_save_grades():
         }
         for entry in grades_data
     ]
-    if new_docs:
-        db["grades"].insert_many(new_docs)
+    all_grades.extend(new_docs)
+    replace_collection("grades", all_grades)
     return jsonify({"success": True})
 
 
@@ -483,10 +482,8 @@ def api_save_grades():
 def api_get_grades():
     item_id = request.args.get("item_id")
     item_type = request.args.get("item_type")
-    results = list(db["grades"].find(
-        {"item_id": item_id, "item_type": item_type},
-        {"_id": False}
-    ))
+    # FIX 5 (cont.): same fix — use read_collection instead of raw db access
+    results = read_collection("grades", {"item_id": item_id, "item_type": item_type})
     return jsonify(results)
 
 
@@ -677,19 +674,19 @@ def api_attendance_trend():
     if not sessions:
         return jsonify([])
 
-    # Group by date
     daily_stats = {}
     for s in sessions:
         date = s.get("date", "").split(" ")[0]
-        if not date: continue
-        
+        if not date:
+            continue
+
         records = s.get("records", [])
         total = len(records)
         present = sum(1 for r in records if r.get("status") == "Present")
-        
+
         if date not in daily_stats:
             daily_stats[date] = {"total": 0, "present": 0}
-        
+
         daily_stats[date]["total"] += total
         daily_stats[date]["present"] += present
 
@@ -698,7 +695,7 @@ def api_attendance_trend():
         stats = daily_stats[date]
         pct = (stats["present"] / stats["total"] * 100) if stats["total"] > 0 else 0
         result.append({"date": date, "percentage": round(pct, 1)})
-    
+
     return jsonify(result)
 
 
@@ -707,18 +704,23 @@ def api_grade_distribution():
     """Returns count of students per grade bracket."""
     grades = read_collection("grades")
     brackets = {"A (90-100)": 0, "B (80-89)": 0, "C (70-79)": 0, "D (60-69)": 0, "F (<60)": 0}
-    
+
     for g in grades:
         try:
             score = float(g.get("score", 0))
-            if score >= 90: brackets["A (90-100)"] += 1
-            elif score >= 80: brackets["B (80-89)"] += 1
-            elif score >= 70: brackets["C (70-79)"] += 1
-            elif score >= 60: brackets["D (60-69)"] += 1
-            else: brackets["F (<60)"] += 1
-        except:
+            if score >= 90:
+                brackets["A (90-100)"] += 1
+            elif score >= 80:
+                brackets["B (80-89)"] += 1
+            elif score >= 70:
+                brackets["C (70-79)"] += 1
+            elif score >= 60:
+                brackets["D (60-69)"] += 1
+            else:
+                brackets["F (<60)"] += 1
+        except Exception:
             continue
-            
+
     return jsonify([{"label": k, "count": v} for k, v in brackets.items()])
 
 
@@ -726,6 +728,5 @@ def api_grade_distribution():
 # Run server
 # --------------------
 if __name__ == "__main__":
-    # Use PORT environment variable for hosting platforms
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port, debug=os.getenv("FLASK_DEBUG", "False").lower() == "true")
