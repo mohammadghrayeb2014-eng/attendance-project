@@ -1,4 +1,4 @@
-from pymongo import MongoClient
+# Purpose served
 import os
 from dotenv import load_dotenv
 

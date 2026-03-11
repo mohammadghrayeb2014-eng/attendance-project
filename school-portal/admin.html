@@ -15,6 +15,22 @@
 </head>
 
 <body class="dashboard-layout">
+  <div class="mobile-topbar">
+    <div class="sidebar-logo" style="margin-bottom: 0;">
+      <div class="logo-shield" style="width: 2rem; height: 2rem; font-size: 1rem; border-radius: 0.5rem;">
+        <i class="fa-solid fa-graduation-cap"></i>
+      </div>
+      <span class="gradient-text">Admin</span>
+    </div>
+    <button class="hamburger" id="hamburgerBtn">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+  </div>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
   <div class="bg-blob-container">
     <div class="blob blob-1"></div>
     <div class="blob blob-2"></div>
@@ -175,6 +191,26 @@
       const user = getCurrentUser();
       if (user) document.getElementById("who").textContent = "Welcome, " + user.username;
       document.getElementById("logoutBtn").addEventListener("click", (e) => { e.preventDefault(); logout(); });
+
+      // Mobile Menu Logic
+      const hamberBtn = document.getElementById("hamburgerBtn");
+      const sidebar = document.querySelector(".sidebar");
+      const overlay = document.getElementById("sidebarOverlay");
+
+      const toggleMenu = () => {
+        hamberBtn.classList.toggle("active");
+        sidebar.classList.toggle("open");
+        overlay.classList.toggle("open");
+      };
+
+      hamberBtn.addEventListener("click", toggleMenu);
+      overlay.addEventListener("click", toggleMenu);
+      // Close on link click on mobile
+      document.querySelectorAll(".nav-link").forEach(link => {
+        link.addEventListener("click", () => {
+          if (sidebar.classList.contains("open")) toggleMenu();
+        });
+      });
     });
   </script>
 </body>
