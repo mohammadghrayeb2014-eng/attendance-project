@@ -1,24 +1,28 @@
 # Python
+*.pyc
+*.pyo
+*.pyd
 __pycache__/
-*.py[cod]
-*$py.class
+
+# Media and Large Folders
+all\ students/
+cc/
+data/
+output/
+models/
+classroom_videos/
+yolov8n.pt
+*.zip
+*.HEIC
+*.jpg
+*.png
+*.mp4
+*.webm
+
+# Project Specific
+school-portal/node_modules/
+school-portal/.env
+school-portal/data/
 .venv/
-env/
 venv/
 .env
-
-# Data and Models
-data/classroom_videos/*
-!data/classroom_videos/.gitkeep
-data/students/*
-!data/students/.gitkeep
-output/
-logs/
-*.pt
-*.h5
-*.weights
-
-# OS files
-.DS_Store
-Thumbs.db
-desktop.ini

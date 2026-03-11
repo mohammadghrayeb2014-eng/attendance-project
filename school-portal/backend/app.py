@@ -22,7 +22,7 @@ app = Flask(__name__, static_folder=str(PARENT_DIR), static_url_path="")
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # --------------------
-# Storage setup (Mongo OR local JSON)
+# Global Helpers
 # --------------------
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
@@ -42,20 +42,15 @@ def _write_json_collection(name: str, data: list):
     with open(p, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-# FIX 1: _filter_json was defined inside the else block (wrong indentation / scope)
-# and referenced `query` from outer scope without being passed it. Moved here as a proper function.
 def _filter_json(items: list, query: dict) -> list:
     if not query:
         return items
-
     def match(doc):
         for k, v in query.items():
             if doc.get(k) != v:
                 return False
         return True
-
     return [d for d in items if match(d)]
-
 
 USE_MONGO = False
 db = None
@@ -63,28 +58,26 @@ db = None
 MONGO_URI = os.getenv("MONGO_URI", "").strip()
 mongo_db_name = os.getenv("MONGO_DB_NAME", "attendance_db").strip()
 
-if MONGO_URI:
-    try:
-        mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True)
-        mongo_client.admin.command("ping")
-        db = mongo_client[mongo_db_name]
-        USE_MONGO = True
-        print("[OK] MongoDB connected successfully")
-    except Exception as e:
-        print("[WARN] MongoDB not available, using local JSON storage instead. Error:", e)
-else:
-    print("[INFO] No MONGO_URI set, using local JSON storage.")
+if not MONGO_URI:
+    print("[CRITICAL] Mongo URI not found in environment variables.")
 
+try:
+    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True)
+    mongo_client.admin.command("ping")
+    db = mongo_client[mongo_db_name]
+    USE_MONGO = True
+    print("[OK] MongoDB connected successfully")
+except Exception as e:
+    print("[ERROR] MongoDB connection failed. Falling back to local storage. Error:", e)
 
 # --------------------
-# DB helpers (Mongo if available, else JSON)
+# DB helpers
 # --------------------
 def read_collection(collection_name: str, query: dict = None) -> list:
     if USE_MONGO and db is not None:
         col = db[collection_name]
         return list(col.find(query or {}, {"_id": False}))
-
-    # FIX 2: JSON fallback now properly uses _filter_json instead of silently ignoring query
+    
     items = _read_json_collection(collection_name)
     if query:
         return _filter_json(items, query)
@@ -92,7 +85,10 @@ def read_collection(collection_name: str, query: dict = None) -> list:
 
 def upsert_document(collection_name: str, doc: dict):
     if USE_MONGO and db is not None:
-        db[collection_name].insert_one({k: v for k, v in doc.items() if k != "_id"})
+        if "id" in doc:
+            db[collection_name].update_one({"id": doc["id"]}, {"$set": doc}, upsert=True)
+        else:
+            db[collection_name].insert_one({k: v for k, v in doc.items() if k != "_id"})
         return
 
     items = _read_json_collection(collection_name)
@@ -110,6 +106,7 @@ def replace_collection(collection_name: str, data: list):
     _write_json_collection(collection_name, data)
 
 def next_id(items: list) -> int:
+    # Use MongoDB count if possible for efficiency, or max ID
     return max((item.get("id", 0) for item in items), default=0) + 1
 
 
@@ -238,11 +235,35 @@ def admin_create_student():
 
     plain_password = generate_password()
     pw_hash = bcrypt.hashpw(plain_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    # FIX 4 (same): removed redundant second read_collection("users") call
     new_user = {
         "id": next_id(all_users),
         "username": username,
         "role": "student",
+        "name": name,
+        "password_hash": pw_hash
+    }
+    upsert_document("users", new_user)
+    return jsonify({"username": username, "name": name, "password": plain_password}), 201
+
+@app.post("/api/admin/create_admin")
+def admin_create_admin():
+    payload = request.get_json(force=True, silent=True) or {}
+    username = (payload.get("username") or "").strip().lower()
+    name = (payload.get("name") or "").strip() or username
+
+    if not username:
+        return jsonify({"error": "Username required"}), 400
+
+    all_users = read_collection("users")
+    if any(u.get("username", "").lower() == username for u in all_users):
+        return jsonify({"error": "Username already exists"}), 400
+
+    plain_password = generate_password()
+    pw_hash = bcrypt.hashpw(plain_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    new_user = {
+        "id": next_id(all_users),
+        "username": username,
+        "role": "admin",
         "name": name,
         "password_hash": pw_hash
     }
@@ -567,15 +588,12 @@ def api_upload_video():
 
 @app.get("/api/attendance/history")
 def api_get_attendance_history():
-    PROJECT_ROOT = PARENT_DIR.parent
-    master_path = PROJECT_ROOT / "output" / "attendance" / "master_attendance.csv"
-    if not master_path.exists():
-        return jsonify([])
+    # Everything should be in MongoDB
     try:
-        with open(master_path, mode="r", encoding="utf-8") as f:
-            return jsonify(list(csv.DictReader(f)))
+        records = read_collection("attendance")
+        return jsonify(records)
     except Exception as e:
-        print(f"Error reading history: {e}")
+        print(f"Error reading history from DB: {e}")
         return jsonify([])
 
 
