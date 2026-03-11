@@ -10,14 +10,15 @@ from pymongo.errors import ServerSelectionTimeoutError
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+BASE_DIR = Path(__file__).parent
+PARENT_DIR = BASE_DIR.parent
+
+# Explicitly load .env from current directory
+load_dotenv(dotenv_path=BASE_DIR / ".env")
 
 # --------------------
 # App setup
 # --------------------
-BASE_DIR = Path(__file__).parent
-PARENT_DIR = BASE_DIR.parent
-
 app = Flask(__name__, static_folder=str(PARENT_DIR), static_url_path="")
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
@@ -55,14 +56,14 @@ def _filter_json(items: list, query: dict) -> list:
 USE_MONGO = False
 db = None
 
-MONGO_URI = os.getenv("MONGO_URI", "").strip()
+MONGO_URI = os.getenv("MONGO_URI", "").strip().strip('"')
 mongo_db_name = os.getenv("MONGO_DB_NAME", "attendance_db").strip()
 
 if not MONGO_URI:
     print("[CRITICAL] Mongo URI not found in environment variables.")
 
 try:
-    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True)
+    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
     mongo_client.admin.command("ping")
     db = mongo_client[mongo_db_name]
     USE_MONGO = True

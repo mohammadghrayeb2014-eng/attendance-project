@@ -1,7 +1,7 @@
 import bcrypt
 from pymongo import MongoClient
 
-MONGO_URI="mongodb+srv://attendance_db:jdk344hj@cluster03.xelztiz.mongodb.net/?appName=Cluster03"
+MONGO_URI="mongodb+srv://attendance_db:mohammadgh2000@cluster03.xelztiz.mongodb.net/?appName=Cluster03"
 
 
 client = MongoClient(MONGO_URI)
