@@ -8,6 +8,7 @@ import string
 from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
 import os
+import certifi
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).parent
@@ -63,13 +64,19 @@ if not MONGO_URI:
     print("[CRITICAL] Mongo URI not found in environment variables.")
 
 try:
-    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    print(f"[INFO] Connecting to Cloud MongoDB: {mongo_db_name}...")
+    # Use certifi for SSL/TLS on all platforms (inc. Windows)
+    mongo_client = MongoClient(
+        MONGO_URI, 
+        serverSelectionTimeoutMS=5000, 
+        tlsCAFile=certifi.where()
+    )
     mongo_client.admin.command("ping")
     db = mongo_client[mongo_db_name]
     USE_MONGO = True
     print("[OK] MongoDB connected successfully")
 except Exception as e:
-    print("[ERROR] MongoDB connection failed. Falling back to local storage. Error:", e)
+    print(f"[WARN] MongoDB connection failed. Falling back to local storage. Error: {e}")
 
 # --------------------
 # DB helpers
@@ -106,6 +113,30 @@ def replace_collection(collection_name: str, data: list):
 
     _write_json_collection(collection_name, data)
 
+def ensure_admin():
+    """Ensure at least one admin account exists."""
+    all_users = read_collection("users")
+    if not any(u.get("role") == "admin" for u in all_users):
+        print("[INIT] No Admin found. Creating default admin...")
+        pw_hash = bcrypt.hashpw("admin123".encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        new_admin = {
+            "id": next_id(all_users),
+            "username": "admin",
+            "role": "admin",
+            "name": "Administrator",
+            "password_hash": pw_hash
+        }
+        upsert_document("users", new_admin)
+        print("[INIT] Created 'admin' with password 'admin123'")
+
+# Call it before the app starts or in a thread
+@app.before_request
+def startup_check():
+    # Only run once
+    if not hasattr(app, "_initialized"):
+        ensure_admin()
+        app._initialized = True
+
 def next_id(items: list) -> int:
     # Use MongoDB count if possible for efficiency, or max ID
     return max((item.get("id", 0) for item in items), default=0) + 1
@@ -128,10 +159,14 @@ def api_login():
     if not username or not password:
         return jsonify({"error": "Username and password required"}), 400
 
+    storage_mode = "Cloud (MongoDB)" if USE_MONGO else "Local (JSON)"
+    print(f"[AUTH] Login attempt for user: '{username}' via {storage_mode}")
+
     all_users = read_collection("users")
     user = next((u for u in all_users if u.get("username", "").lower() == username), None)
 
     if not user:
+        print(f"[AUTH] FAILED: User '{username}' not found in {storage_mode}")
         return jsonify({"error": "Invalid credentials"}), 401
 
     raw_pw_hash = user.get("password_hash") or ""
