@@ -272,49 +272,86 @@ body {
     opacity: 1;
 }
 
-/* Stats Grid */
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 1.5rem;
-    margin-bottom: 3rem;
-}
-
+/* Professional Stat Cards */
 .stat-card {
-    padding: 2rem;
+    padding: 2.25rem;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    justify-content: center;
+    position: relative;
+    border: 1px solid var(--slate-200);
+    background: white;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+.stat-card:hover {
+    border-color: var(--primary);
+    transform: translateY(-4px);
 }
 
 .stat-icon {
-    width: 3.5rem;
-    height: 3.5rem;
+    width: 3rem;
+    height: 3rem;
     background: var(--primary-light);
     color: var(--primary);
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: var(--radius-lg);
-    font-size: 1.5rem;
-    margin-bottom: 0.5rem;
-    box-shadow: var(--shadow-sm);
+    border-radius: 12px;
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
 }
 
 .stat-label {
     font-size: 0.9rem;
-    font-weight: 700;
+    font-weight: 600;
     color: var(--slate-400);
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
+    margin-bottom: 0.25rem;
 }
 
 .stat-value {
     font-size: 2.5rem;
     font-weight: 800;
     color: var(--slate-900);
-    letter-spacing: -0.02em;
+    letter-spacing: -0.04em;
+    line-height: 1;
 }
+
+/* Premium Avatars */
+.avatar {
+    width: 3.5rem;
+    height: 3.5rem;
+    background: var(--slate-100);
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    font-weight: 800;
+    font-size: 1.1rem;
+    border: 1px solid var(--slate-200);
+    transition: var(--transition-fast);
+}
+
+.avatar:hover {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+/* Clean Status Indicators */
+.status {
+    display: inline-flex;
+    padding: 0.35rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.status-active, .status-present { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+.status-pending { background: #fffbeb; color: #d97706; border: 1px solid #fef3c7; }
+.status-absent { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.status-inactive { background: #f8fafc; color: #64748b; border: 1px solid #e2e8f0; }
 
 /* Buttons */
 .btn {
