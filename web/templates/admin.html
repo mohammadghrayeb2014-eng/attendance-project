@@ -4,51 +4,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - School Portal</title>
-    <!-- Fonts -->
+    <title>Admin Dashboard | School Portal</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700;800&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Styles -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body class="dashboard-layout">
+    <!-- Mobile Topbar -->
+    <div class="mobile-topbar">
+        <div class="sidebar-logo" style="margin-bottom: 0;">
+            <i class="fa-solid fa-graduation-cap"></i>
+            <span>Admin</span>
+        </div>
+        <button class="hamburger" id="hamburgerBtn">
+            <span></span>
+            <span></span>
+            <span></span>
+        </button>
+    </div>
+
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
     <!-- Sidebar -->
     <aside class="sidebar">
         <div class="sidebar-logo">
-            <i class="fa-solid fa-graduation-cap gradient-text"></i>
-            <span class="gradient-text">Portal</span>
+            <i class="fa-solid fa-graduation-cap"></i>
+            <span>Terminal</span>
         </div>
 
         <nav class="nav-links">
             <a href="#" class="nav-link active">
-                <i class="fa-solid fa-gauge-high"></i> Dashboard
+                <i class="fa-solid fa-gauge-high"></i> Overview
             </a>
             <a href="#" class="nav-link">
                 <i class="fa-solid fa-chalkboard-user"></i> Teachers
             </a>
             <a href="#" class="nav-link">
-                <i class="fa-solid fa-users-rectangle"></i> Classes
+                <i class="fa-solid fa-users-rectangle"></i> Rooms
             </a>
             <a href="#" class="nav-link">
-                <i class="fa-solid fa-book-open"></i> Subjects
+                <i class="fa-solid fa-book-open"></i> Courses
             </a>
             <a href="#" class="nav-link">
-                <i class="fa-solid fa-calendar-check"></i> Assignments
+                <i class="fa-solid fa-calendar-check"></i> Schedule
             </a>
             <a href="#" class="nav-link">
-                <i class="fa-solid fa-chart-line"></i> Reports
+                <i class="fa-solid fa-chart-line"></i> Analytics
             </a>
 
             <div style="margin-top: auto;">
                 <a href="#" id="logoutBtn" class="nav-link" style="color: #ef4444;">
-                    <i class="fa-solid fa-right-from-bracket"></i> Logout
+                    <i class="fa-solid fa-right-from-bracket"></i> Sign Out
                 </a>
             </div>
         </nav>
@@ -57,93 +69,135 @@
     <main class="main-content">
         <header class="header">
             <div>
-                <h2>Welcome back, <span class="gradient-text" id="adminName">Admin</span></h2>
-                <p id="todayDate" style="color: var(--text-secondary);"></p>
+                <h2>Control <span class="gradient-text">Center</span></h2>
+                <p id="todayDate" style="color: var(--slate-700); font-weight: 500;"></p>
             </div>
             <div class="user-profile">
-                <button class="btn btn-outline" style="border-radius: 50%; width: 2.5rem; height: 2.5rem; padding: 0;">
-                    <i class="fa-regular fa-bell"></i>
-                </button>
-                <div class="avatar" id="adminAvatar">A</div>
+                <div class="avatar" id="adminAvatar" style="border-radius: 1rem;">AD</div>
             </div>
         </header>
 
         <!-- Stats Grid -->
         <div class="stats-grid">
-            <div class="stat-card">
-                <span class="stat-label">Total Teachers</span>
-                <span class="stat-value" id="statTeachers">-</span>
+            <div class="card stat-card">
+                <span class="stat-label">Faculty Staff</span>
+                <span class="stat-value" id="statTeachers">12</span>
             </div>
-            <div class="stat-card">
-                <span class="stat-label">Total Students</span>
-                <span class="stat-value" id="statStudents">-</span>
+            <div class="card stat-card">
+                <span class="stat-label">Enrolled Students</span>
+                <span class="stat-value" id="statStudents">482</span>
             </div>
-            <div class="stat-card">
-                <span class="stat-label">Active Classes</span>
-                <span class="stat-value" id="statClasses">-</span>
+            <div class="card stat-card">
+                <span class="stat-label">Active Rooms</span>
+                <span class="stat-value" id="statClasses">24</span>
             </div>
-            <div class="stat-card">
-                <span class="stat-label">Avg Attendance</span>
-                <span class="stat-value" id="statAttendance">-%</span>
+            <div class="card stat-card">
+                <span class="stat-label">Term Attendance</span>
+                <span class="stat-value" id="statAttendance">92%</span>
             </div>
         </div>
 
         <!-- Analytical Charts -->
-        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; margin-bottom: 2.5rem;">
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; margin-bottom: 2.5rem;" class="mobile-stack">
             <div class="card">
-                <h3><i class="fa-solid fa-chart-line"></i> Attendance Trend</h3>
+                <h3 style="margin-bottom: 2rem;"><i class="fa-solid fa-chart-line" style="color: var(--indigo-primary);"></i> Attendance Trend</h3>
                 <canvas id="attendanceChart" style="max-height: 300px;"></canvas>
             </div>
             <div class="card">
-                <h3><i class="fa-solid fa-chart-pie"></i> Grade Distribution</h3>
+                <h3 style="margin-bottom: 2rem;"><i class="fa-solid fa-chart-pie" style="color: #7c3aed;"></i> Grade Spread</h3>
                 <canvas id="gradeChart" style="max-height: 300px;"></canvas>
             </div>
         </div>
 
         <!-- Recent Activity -->
-        <h3>Recent Activity</h3>
-        <div class="card table-container" style="margin-top: 1rem;">
+        <h3 style="margin-bottom: 1.5rem;">Recent Operational Logs</h3>
+        <div class="card table-container">
             <table>
                 <thead>
                     <tr>
-                        <th>Teacher</th>
+                        <th>Operator</th>
                         <th>Action</th>
                         <th>Class</th>
-                        <th>Time</th>
+                        <th>Timestamp</th>
                         <th>Status</th>
                     </tr>
                 </thead>
-                <tbody id="activityBody">
+                <tbody id="activityBody" class="stagger-in">
                     <tr>
                         <td>
                             <div style="display: flex; align-items: center; gap: 0.75rem;">
-                                <div class="avatar" style="width: 2rem; height: 2rem; font-size: 0.8rem;">JD</div>
-                                <b>John Doe</b>
+                                <div class="avatar" style="width: 2.25rem; height: 2.25rem; font-size: 0.85rem; border-radius: 0.6rem;">JD</div>
+                                <span style="font-weight: 600;">Prof. John Doe</span>
                             </div>
                         </td>
-                        <td>Started Session</td>
-                        <td>Math 101</td>
-                        <td>2 min ago</td>
-                        <td><span class="status status-active">Active</span></td>
+                        <td>Initialize Session</td>
+                        <td>Physics Lab 2</td>
+                        <td>4m ago</td>
+                        <td><span class="status status-active">Live</span></td>
                     </tr>
                     <tr>
                         <td>
                             <div style="display: flex; align-items: center; gap: 0.75rem;">
-                                <div class="avatar" style="width: 2rem; height: 2rem; font-size: 0.8rem;">JS</div>
-                                <b>Jane Smith</b>
+                                <div class="avatar" style="width: 2.25rem; height: 2.25rem; font-size: 0.85rem; border-radius: 0.6rem; background: #9333ea;">JS</div>
+                                <span style="font-weight: 600;">Jane Smith</span>
                             </div>
                         </td>
-                        <td>Uploaded Grades</td>
-                        <td>Physics 202</td>
-                        <td>1 hour ago</td>
-                        <td><span class="status status-inactive">Done</span></td>
+                        <td>Sync Attendance</td>
+                        <td>CS 101</td>
+                        <td>1h ago</td>
+                        <td><span class="status status-inactive">Logged</span></td>
                     </tr>
                 </tbody>
             </table>
         </div>
     </main>
 
+    <script>
+        const hamberBtn = document.getElementById("hamburgerBtn");
+        const sidebar = document.querySelector(".sidebar");
+        const overlay = document.getElementById("sidebarOverlay");
+
+        const toggleMenu = () => {
+            hamberBtn.classList.toggle("active");
+            sidebar.classList.toggle("open");
+            overlay.classList.toggle("open");
+        };
+
+        hamberBtn.addEventListener("click", toggleMenu);
+        overlay.addEventListener("click", toggleMenu);
+
+        document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-US', {
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+        });
+
+        // Charts (Mock)
+        if (typeof Chart !== 'undefined') {
+            new Chart(document.getElementById('attendanceChart'), {
+                type: 'line',
+                data: {
+                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+                    datasets: [{
+                        label: 'Attendance %',
+                        data: [90, 85, 95, 92, 88],
+                        borderColor: '#4f46e5',
+                        tension: 0.4
+                    }]
+                },
+                options: { responsive: true, plugins: { legend: { display: false } } }
+            });
+            new Chart(document.getElementById('gradeChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: ['A', 'B', 'C', 'D'],
+                    datasets: [{
+                        data: [35, 45, 15, 5],
+                        backgroundColor: ['#4f46e5', '#7c3aed', '#a16207', '#ef4444']
+                    }]
+                }
+            });
+        }
+    </script>
     <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
 </body>
 
-</html>
+</html>
