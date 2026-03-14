@@ -4,37 +4,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Student Portal | School Portal</title>
+    <title>Student Portal - School Portal</title>
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700;800&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Styles -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 
 <body class="dashboard-layout">
-    <!-- Mobile Topbar -->
-    <div class="mobile-topbar">
-        <div class="sidebar-logo" style="margin-bottom: 0;">
-            <i class="fa-solid fa-graduation-cap"></i>
-            <span>Student</span>
-        </div>
-        <button class="hamburger" id="hamburgerBtn">
-            <span></span>
-            <span></span>
-            <span></span>
-        </button>
-    </div>
-
-    <div class="sidebar-overlay" id="sidebarOverlay"></div>
-
     <!-- Sidebar -->
     <aside class="sidebar">
         <div class="sidebar-logo">
-            <i class="fa-solid fa-graduation-cap"></i>
-            <span>Portal</span>
+            <i class="fa-solid fa-graduation-cap gradient-text"></i>
+            <span class="gradient-text">Portal</span>
         </div>
 
         <nav class="nav-links">
@@ -42,15 +29,15 @@
                 <i class="fa-solid fa-gauge-high"></i> Dashboard
             </a>
             <a href="#" class="nav-link">
-                <i class="fa-solid fa-user-graduate"></i> Academic Record
+                <i class="fa-solid fa-user-graduate"></i> My Grades
             </a>
             <a href="#" class="nav-link">
-                <i class="fa-solid fa-calendar-check"></i> Attendance Details
+                <i class="fa-solid fa-calendar-check"></i> Attendance
             </a>
 
             <div style="margin-top: auto;">
                 <a href="#" id="logoutBtn" class="nav-link" style="color: #ef4444;">
-                    <i class="fa-solid fa-right-from-bracket"></i> Sign Out
+                    <i class="fa-solid fa-right-from-bracket"></i> Logout
                 </a>
             </div>
         </nav>
@@ -59,38 +46,42 @@
     <main class="main-content">
         <header class="header">
             <div>
-                <h2>Hello, <span class="gradient-text" id="studentName">Scholar</span></h2>
-                <p id="todayDate" style="color: var(--slate-700); font-weight: 500;"></p>
+                <h2>Hello, <span class="gradient-text" id="studentName">Student</span></h2>
+                <p id="todayDate" style="color: var(--text-secondary);"></p>
             </div>
             <div class="user-profile">
-                <div class="avatar" id="studentAvatar" style="border-radius: 1rem;">S</div>
+                <button class="btn btn-outline" style="border-radius: 50%; width: 2.5rem; height: 2.5rem; padding: 0;">
+                    <i class="fa-regular fa-bell"></i>
+                </button>
+                <div class="avatar" id="studentAvatar">S</div>
             </div>
         </header>
 
         <!-- Stats Overview -->
         <div class="stats-grid">
             <div class="card stat-card">
-                <span class="stat-label">Academic Standing</span>
+                <span class="stat-label">Overall GPA</span>
                 <span class="stat-value">3.8</span>
-                <div style="margin-top: 0.5rem;"><span class="status status-active">Top 10%</span></div>
+                <span class="status status-active">Top 10%</span>
             </div>
             <div class="card stat-card">
-                <span class="stat-label">Engagement Rate</span>
+                <span class="stat-label">Attendance</span>
                 <span class="stat-value">95%</span>
-                <div style="margin-top: 0.5rem;"><span class="status status-active">Exemplary</span></div>
+                <span class="status status-active">Great</span>
             </div>
             <div class="card stat-card">
-                <span class="stat-label">Upcoming Tasks</span>
+                <span class="stat-label">Pending HW</span>
                 <span class="stat-value">2</span>
-                <div style="margin-top: 0.5rem;"><span class="status status-pending">Priority</span></div>
+                <span class="status status-pending">Due Soon</span>
             </div>
         </div>
 
-        <div class="card" style="padding: 5rem 3rem; text-align: center; background: linear-gradient(135deg, white, var(--slate-50));">
-            <div style="font-size: 5rem; margin-bottom: 2rem; filter: drop-shadow(0 10px 15px rgba(0,0,0,0.1));">🚀</div>
-            <h3 style="font-size: 2rem; margin-bottom: 1rem;">Your Academic <span class="gradient-text">Odyssey</span></h3>
-            <p style="color: var(--slate-700); max-width: 500px; margin: 0 auto 2.5rem; font-size: 1.1rem; line-height: 1.6;">We're currently synthesizing your unique performance profile. Deep analytical insights and personalized learning paths are coming soon.</p>
-            <button class="btn btn-primary" style="background: var(--indigo-primary); color: white; border: none; padding: 1rem 2.5rem; border-radius: 1.25rem; font-weight: 700; cursor: pointer; box-shadow: 0 10px 20px -5px rgba(79,70,229,0.3); transition: var(--transition-smooth);" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">Initialize Sync</button>
+        <div class="card" style="padding: 4rem; text-align: center;">
+            <div style="font-size: 4rem; margin-bottom: 1.5rem;">🚀</div>
+            <h3>Your Academic Journey</h3>
+            <p style="color: var(--text-secondary); max-width: 400px; margin: 0 auto 2rem;">We're currently preparing
+                your detailed performance analytics. Check back soon for deeper insights!</p>
+            <button class="btn btn-primary">Refresh Dashboard</button>
         </div>
     </main>
 
@@ -101,34 +92,17 @@
             if (raw) {
                 const user = JSON.parse(raw);
                 document.getElementById('studentName').textContent = user.name;
-                document.getElementById('studentAvatar').textContent = user.name[0].toUpperCase();
+                document.getElementById('studentAvatar').textContent = user.name[0];
             }
             document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-US', {
                 weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
             });
-            document.getElementById('logoutBtn').addEventListener('click', (e) => {
-                e.preventDefault();
+            document.getElementById('logoutBtn').addEventListener('click', () => {
                 localStorage.removeItem(STORAGE_KEY);
                 window.location.href = "/login";
             });
-
-            // Mobile Menu
-            const hamberBtn = document.getElementById("hamburgerBtn");
-            const sidebar = document.querySelector(".sidebar");
-            const overlay = document.getElementById("sidebarOverlay");
-
-            const toggleMenu = () => {
-                hamberBtn.classList.toggle("active");
-                sidebar.classList.toggle("open");
-                overlay.classList.toggle("open");
-            };
-
-            if (hamberBtn) {
-                hamberBtn.addEventListener("click", toggleMenu);
-                overlay.addEventListener("click", toggleMenu);
-            }
         });
     </script>
 </body>
 
-</html>
+</html>
