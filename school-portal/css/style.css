@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
   /* Ultra-Premium Academic Palette — preserved */
@@ -40,7 +40,7 @@
 }
 
 body {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   background: var(--bg-main);
   color: var(--text-main);
   min-height: 100vh;
@@ -97,8 +97,8 @@ body {
 /* ──────────────────────────────────────────────
    TYPOGRAPHY
 ────────────────────────────────────────────── */
-h1, h2, h3, .sidebar-logo, .stat-value {
-  font-family: 'Syne', sans-serif;
+h1, h2, h3, .sidebar-logo, .stat-value, .btn-premium, .input-group label, .title, .btn-premium-sm, .stat-label {
+  font-family: 'Plus Jakarta Sans', sans-serif;
 }
 
 .gradient-text {
@@ -226,7 +226,7 @@ h1, h2, h3, .sidebar-logo, .stat-value {
 
 .input-group label {
   display: block;
-  font-family: 'Syne', sans-serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -258,7 +258,7 @@ h1, h2, h3, .sidebar-logo, .stat-value {
   border: 1.5px solid var(--border);
   border-radius: var(--radius-lg);
   color: var(--text-main);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 0.9375rem;
   font-weight: 500;
   transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
@@ -286,7 +286,7 @@ h1, h2, h3, .sidebar-logo, .stat-value {
   padding: 1.125rem;
   border: none;
   border-radius: var(--radius-lg);
-  font-family: 'Syne', sans-serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   font-size: 1rem;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -377,7 +377,7 @@ h1, h2, h3, .sidebar-logo, .stat-value {
   display: flex;
   align-items: center;
   gap: 0.875rem;
-  font-family: 'Syne', sans-serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   font-size: 1.4rem;
   font-weight: 800;
   color: var(--p-600);
@@ -503,7 +503,7 @@ h1, h2, h3, .sidebar-logo, .stat-value {
 .item .meta { flex: 1; }
 
 .item .title {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   font-size: 1.0625rem;
   font-weight: 700;
   color: var(--text-main);
@@ -527,7 +527,7 @@ h1, h2, h3, .sidebar-logo, .stat-value {
   padding: 0.3rem 0.8rem;
   background: var(--p-50);
   border-radius: 2rem;
-  font-family: 'Syne', sans-serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   font-size: 0.7rem;
   font-weight: 700;
   color: var(--p-600);
@@ -552,7 +552,7 @@ h1, h2, h3, .sidebar-logo, .stat-value {
   padding: 0.7rem 1.25rem;
   border: none;
   border-radius: var(--radius-md);
-  font-family: 'Syne', sans-serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   font-size: 0.8125rem;
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -650,7 +650,7 @@ h1, h2, h3, .sidebar-logo, .stat-value {
 .stat-info { display: flex; flex-direction: column; }
 
 .stat-label {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   font-size: 0.7rem;
   font-weight: 700;
   color: var(--text-muted);
