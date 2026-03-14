@@ -19,6 +19,20 @@
 </head>
 
 <body class="dashboard-layout">
+    <!-- Mobile Topbar -->
+    <div class="mobile-topbar">
+        <div class="sidebar-logo" style="margin-bottom: 0;">
+            <i class="fa-solid fa-graduation-cap gradient-text"></i>
+            <span class="gradient-text">Portal</span>
+        </div>
+        <button class="hamburger" id="hamburgerBtn">
+            <span></span>
+            <span></span>
+            <span></span>
+        </button>
+    </div>
+
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <!-- Sidebar -->
     <aside class="sidebar">
         <div class="sidebar-logo">
@@ -144,6 +158,29 @@
     </main>
 
     <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const hamburgerBtn = document.getElementById('hamburgerBtn');
+            const sidebar = document.querySelector('.sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+
+            if (hamburgerBtn) {
+                hamburgerBtn.addEventListener('click', () => {
+                    sidebar.classList.toggle('open');
+                    hamburgerBtn.classList.toggle('active');
+                    overlay.classList.toggle('open');
+                });
+            }
+
+            if (overlay) {
+                overlay.addEventListener('click', () => {
+                    sidebar.classList.remove('open');
+                    hamburgerBtn.classList.remove('active');
+                    overlay.classList.remove('open');
+                });
+            }
+        });
+    </script>
 </body>
 
 </html>
