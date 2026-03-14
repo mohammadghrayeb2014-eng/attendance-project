@@ -723,75 +723,37 @@ body.nav-open { overflow: hidden; }
 }
 
 /* ──────────────────────────────────────────────
-   MOBILE  ≤ 768px  — DRAWER SYSTEM
+   MOBILE  ≤ 768px  — FUTURISTIC MOBILE-FIRST
 ────────────────────────────────────────────── */
 @media (max-width: 768px) {
+
+  /* ── Layout ── */
   .dashboard-layout { flex-direction: column; }
 
+  /* ── Sticky glassmorphic header ── */
   .sidebar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    width: 280px;
-    height: 100vh;
-    transform: translateX(-100%);
-    z-index: 1200;
-    background: white;
-    box-shadow: 20px 0 40px rgba(0,0,0,0.1);
-    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    display: flex !important; /* Force flex for JS toggling */
-  }
-
-  .sidebar.open {
-    transform: translateX(0);
-  }
-
-  .sidebar-logo {
-    display: flex !important;
-  }
-
-  .nav-links {
-    display: flex !important;
-  }
-
-  .mobile-topbar {
-    display: flex;
+    width: 100%;
+    height: auto;
     position: sticky;
     top: 0;
-    height: var(--header-height);
-    background: rgba(255,255,255,0.9);
-    backdrop-filter: blur(20px);
-    z-index: 1100;
-    padding: 0 1.25rem;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid var(--border);
+    flex-direction: column;
+    padding: 0;
+    border-right: none;
+    border-bottom: 1px solid rgba(96,165,250,0.18);
+    background: rgba(255,255,255,0.82);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    z-index: 500;
+    box-shadow: 0 4px 24px rgba(37,99,235,0.08);
   }
 
-  .sidebar-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.4);
-    backdrop-filter: blur(4px);
-    z-index: 1150;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s;
-  }
-
-  .sidebar-overlay.open {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .logo-shield {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, var(--p-600), var(--p-400));
-    color: white;
-    box-shadow: var(--glow-sm);
+  /* Neon bottom accent on header */
+  .sidebar::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 8%; right: 8%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--p-400), transparent);
   }
 
   /* Hide desktop nav */
