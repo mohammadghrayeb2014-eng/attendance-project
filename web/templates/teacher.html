@@ -17,26 +17,11 @@
 </head>
 
 <body class="dashboard-layout">
-    <!-- Mobile Topbar -->
-    <div class="mobile-topbar">
-        <div class="sidebar-logo" style="margin-bottom: 0;">
-            <i class="fa-solid fa-graduation-cap"></i>
-            <span class="logo-text">Portal</span>
-        </div>
-        <button class="hamburger" id="hamburgerBtn" aria-label="Toggle Menu">
-            <span></span>
-            <span></span>
-            <span></span>
-        </button>
-    </div>
-
-    <div class="sidebar-overlay" id="sidebarOverlay"></div>
-
     <!-- Sidebar -->
     <aside class="sidebar">
         <div class="sidebar-logo">
-            <i class="fa-solid fa-graduation-cap"></i>
-            <span class="logo-text">Portal</span>
+            <i class="fa-solid fa-graduation-cap gradient-text"></i>
+            <span class="gradient-text">Portal</span>
         </div>
 
         <nav class="nav-links">
@@ -54,7 +39,7 @@
             </a>
 
             <div style="margin-top: auto;">
-                <a href="#" id="logoutBtn" class="nav-link" style="color: var(--danger);">
+                <a href="#" id="logoutBtn" class="nav-link" style="color: #ef4444;">
                     <i class="fa-solid fa-right-from-bracket"></i> Logout
                 </a>
             </div>
@@ -62,61 +47,60 @@
     </aside>
 
     <!-- Main Content -->
-    <main class="main-content stagger-in">
+    <main class="main-content">
         <header class="header">
             <div>
-                <h1>Welcome back, <span class="gradient-text" id="teacherName">Teacher</span></h1>
-                <p id="todayDate" style="color: var(--slate-400); font-weight: 500;"></p>
+                <h2>Welcome back, <span class="gradient-text" id="teacherName">Teacher</span></h2>
+                <p id="todayDate" style="color: var(--text-secondary);"></p>
             </div>
-            <div class="header-actions">
-                <div class="user-profile">
-                    <button class="btn btn-outline" style="border-radius: 50%; width: 3rem; height: 3rem; padding: 0;">
-                        <i class="fa-regular fa-bell"></i>
-                    </button>
-                    <div class="avatar" id="teacherAvatar">T</div>
-                </div>
+            <div class="user-profile">
+                <button class="btn btn-outline" style="border-radius: 50%; width: 2.5rem; height: 2.5rem; padding: 0;">
+                    <i class="fa-regular fa-bell"></i>
+                </button>
+                <div class="avatar" id="teacherAvatar">T</div>
             </div>
         </header>
 
         <!-- Stats Overview -->
         <div class="stats-grid">
             <div class="card stat-card">
-                <div class="stat-icon"><i class="fa-solid fa-chalkboard"></i></div>
-                <span class="stat-label">How many classes</span>
-                <span class="stat-value" id="statClasses">6</span>
+                <span class="stat-label">Assigned Classes</span>
+                <span class="stat-value" id="statClasses">-</span>
+                <span class="status status-active">Active</span>
             </div>
             <div class="card stat-card">
-                <div class="stat-icon" style="color: var(--accent); background: hsla(var(--accent-h), var(--accent-s), 95%);"><i class="fa-solid fa-users"></i></div>
-                <span class="stat-label">How many students</span>
-                <span class="stat-value" id="statStudents">184</span>
+                <span class="stat-label">Total Students</span>
+                <span class="stat-value" id="statStudents">-</span>
+                <span class="status status-active">Enrolled</span>
             </div>
             <div class="card stat-card">
-                <div class="stat-icon" style="color: var(--success); background: #ecfdf5;"><i class="fa-solid fa-clipboard-check"></i></div>
-                <span class="stat-label">Student attendance</span>
-                <span class="stat-value" id="statAttendance">94%</span>
+                <span class="stat-label">Avg. Attendance</span>
+                <span class="stat-value" id="statAttendance">-%</span>
+                <span class="status status-pending">Real-time</span>
             </div>
             <div class="card stat-card">
-                <div class="stat-icon" style="color: var(--warning); background: #fffbeb;"><i class="fa-solid fa-star"></i></div>
-                <span class="stat-label">Items graded</span>
-                <span class="stat-value" id="statGraded">12</span>
+                <span class="stat-label">Items Graded</span>
+                <span class="stat-value" id="statGraded">-</span>
+                <span class="status status-inactive">This Term</span>
             </div>
         </div>
 
         <!-- Dashboard Content Units -->
         <div id="dashboardSection">
             <!-- Active Sessions Row -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin: 3rem 0 1.5rem;">
-                <h3 style="margin-bottom: 0;">Active Sessions</h3>
-                <button class="btn btn-outline btn-sm" onclick="document.getElementById('navMyClasses').click()">View All</button>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h3 style="margin-bottom: 0;">Active Classes</h3>
+                <button class="btn btn-outline" onclick="document.getElementById('navMyClasses').click()">View
+                    All</button>
             </div>
             <div class="stats-grid" id="activeSessionsGrid">
                 <!-- Injected via JS -->
-                <p class="muted">Scanning for active sessions...</p>
+                <p class="muted">Loading sessions...</p>
             </div>
 
             <!-- Recent Activity -->
-            <h3 style="margin-top: 4rem; margin-bottom: 1.5rem;">Recent Attendance Logs</h3>
-            <div class="table-container">
+            <h3 style="margin-top: 2.5rem; margin-bottom: 1.5rem;">Recent Attendance Logs</h3>
+            <div class="card table-container">
                 <table>
                     <thead>
                         <tr>
@@ -137,12 +121,12 @@
 
         <!-- My Classes Section (Hidden initially) -->
         <div id="classesSection" style="display: none;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                 <h3>My Full Class List</h3>
                 <input type="text" id="classSearch" class="input-field" placeholder="Search classes..."
-                    style="max-width: 300px;">
+                    style="width: 250px; margin-bottom: 0;">
             </div>
-            <div class="table-container">
+            <div class="card table-container">
                 <table id="fullClassTable">
                     <thead>
                         <tr>
@@ -161,48 +145,22 @@
 
         <!-- Academic Tools Section (Hidden initially) -->
         <div id="academicSection" style="display: none;">
-            <h3 style="margin-bottom: 2rem;">Academic Oversight</h3>
-            <div>
-                <div class="role-selector" style="margin-bottom: 2.5rem; max-width: 600px;">
+            <h3 style="margin-bottom: 1.5rem;">Academic Oversight</h3>
+            <div class="card">
+                <div class="role-selector" style="margin-bottom: 2rem;">
                     <button class="role-btn active" onclick="switchAcademicTab('exams', this)">Exams & Quizzes</button>
                     <button class="role-btn" onclick="switchAcademicTab('homework', this)">Homework</button>
                     <button class="role-btn" onclick="switchAcademicTab('grading', this)">Grading</button>
                 </div>
 
-                <div id="academicTabContent"></div>
+                <div id="academicTabContent">
+                    <!-- Content based on selected tab -->
+                </div>
             </div>
         </div>
 
     </main>
 
-    <script>
-        // UI Interaction
-        const hamberBtn = document.getElementById("hamburgerBtn");
-        const sidebar = document.querySelector(".sidebar");
-        const overlay = document.getElementById("sidebarOverlay");
-
-        const toggleMenu = () => {
-            hamberBtn.classList.toggle("active");
-            sidebar.classList.toggle("active");
-            overlay.classList.toggle("active");
-            document.body.style.overflow = sidebar.classList.contains("active") ? "hidden" : "";
-        };
-
-        if (hamberBtn) hamberBtn.addEventListener("click", toggleMenu);
-        if (overlay) overlay.addEventListener("click", toggleMenu);
-
-        // Date Display
-        document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-US', {
-            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-        });
-
-        // Logout
-        document.getElementById('logoutBtn').addEventListener('click', (e) => {
-            e.preventDefault();
-            localStorage.removeItem('user');
-            window.location.href = '/login';
-        });
-    </script>
     <!-- JS Scripts -->
     <script src="{{ url_for('static', filename='js/teacher.js') }}"></script>
 </body>
