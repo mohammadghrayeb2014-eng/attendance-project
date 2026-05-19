@@ -1,45 +1,52 @@
-// ---- Camera controller (Phase 2.2) ----
+// ---- Camera controller + Class Session Logic ----
 const CAM_URL_KEY = "esp32_cam_url";
 const CAM_MODE_KEY = "esp32_cam_mode";
 const CAM_FPS_KEY = "esp32_cam_fps";
-const ACTIVE_KEY = "active_assignment"; // Key shared with teacher.js
+const ACTIVE_KEY = "active_assignment";
 
 let camTimer = null;
 let camConnected = false;
 let lastFrameAt = 0;
 let reconnectTimer = null;
-let sessionState = "IDLE"; // IDLE, RUNNING, PAUSED, ENDED
-let sessionTimer = null;
-let sessionStartTime = 0;
+let sessionState = "IDLE";
 
-function $(id) { return document.getElementById(id); }
+const API = "/api";
 
-const API = "/api"; // Define API base
+function $(id) {
+  return document.getElementById(id);
+}
+
+/* =========================================================
+   SESSION + CLASS LOADING
+   ========================================================= */
 
 async function loadSession() {
   const raw = localStorage.getItem(ACTIVE_KEY);
+
   if (!raw) {
-    // Spec requirement: redirect back if missing
     window.location.href = "teacher.html";
     return;
   }
 
   const assignment = JSON.parse(raw);
+
   $("sessionTitle").textContent = `${assignment.class_name} — ${assignment.subject_name}`;
   $("sessionMeta").textContent = `Class ID: ${assignment.class_id} • Subject ID: ${assignment.subject_id}`;
 
-  // Fetch latest seating data
   try {
     const res = await fetch(`${API}/classes`);
     const classes = await res.json();
-    const currentClass = classes.find(c => c.id === assignment.class_id);
+
+    const currentClass = classes.find(c =>
+      String(c.id) === String(assignment.class_id)
+    );
+
     const seating = currentClass ? (currentClass.seating || {}) : {};
+    const rows = currentClass?.rows || assignment.rows || 4;
+    const cols = currentClass?.cols || assignment.cols || 6;
 
-    // Fallback to 4x6 if rows/cols missing from simple assignment object
-    const r = assignment.rows || 4;
-    const c = assignment.cols || 6;
+    renderGrid(rows, cols, seating, assignment.class_id);
 
-    renderGrid(r, c, seating, assignment.class_id);
   } catch (e) {
     console.error("Failed to load seating:", e);
     renderGrid(assignment.rows || 4, assignment.cols || 6, {}, assignment.class_id);
@@ -51,64 +58,67 @@ async function loadSession() {
 function renderGrid(rows, cols, seating, classId) {
   const grid = $("seatGrid");
   grid.innerHTML = "";
-
-  // Grid Template: 1 column for row labels + 'cols' columns for seats
-  // Widen first col to fit "Row A" or "A"
+  grid.style.display = "grid";
   grid.style.gridTemplateColumns = `60px repeat(${cols}, 1fr)`;
 
-  // -- Header Row (empty corner + col numbers) --
-  // Corner
   const corner = document.createElement("div");
   grid.appendChild(corner);
 
-  // Column Numbers (1, 2, 3...)
   for (let c = 0; c < cols; c++) {
     const head = document.createElement("div");
     head.className = "grid-label";
-    head.textContent = c + 1; // Reverted to simple numbers
+    head.textContent = c + 1;
     grid.appendChild(head);
   }
 
-  // -- Rows --
   for (let r = 0; r < rows; r++) {
     const rowLabel = document.createElement("div");
     rowLabel.className = "grid-label row-header";
-    rowLabel.textContent = String.fromCharCode(65 + r); // A, B, C...
+    rowLabel.textContent = String.fromCharCode(65 + r);
     grid.appendChild(rowLabel);
 
-
-    // Seats
     for (let c = 0; c < cols; c++) {
       const seat = document.createElement("div");
       seat.className = "seat";
+
       const key = `${r}_${c}`;
       const studentName = seating[key] || "Empty";
-      const seatLabel = `${String.fromCharCode(65 + r)}${c + 1}`; // A1, B1, etc.
+      const seatLabel = `${String.fromCharCode(65 + r)}${c + 1}`;
 
-      // Highlight if occupied
-      if (seating[key]) seat.classList.add("occupied");
+      if (seating[key]) {
+        seat.classList.add("occupied");
+      }
 
-      seat.innerHTML = `<strong>${seatLabel}</strong><small>${studentName}</small>`;
+      seat.innerHTML = `
+        <strong>${seatLabel}</strong>
+        <small>${studentName}</small>
+      `;
 
-      // Click to edit -> Open Modal
       seat.onclick = () => {
-        openSeatModal(seatLabel, studentName === "Empty" ? "" : studentName, async (newName) => {
-          // Save to backend
-          await saveSeat(classId, r, c, newName);
+        openSeatModal(
+          seatLabel,
+          studentName === "Empty" ? "" : studentName,
+          async (newName) => {
+            await saveSeat(classId, r, c, newName);
 
-          // Update UI locally
-          const finalName = newName.trim() || "Empty";
-          seat.querySelector("small").textContent = finalName;
-          if (finalName !== "Empty") seat.classList.add("occupied");
-          else seat.classList.remove("occupied");
-        });
+            const finalName = newName.trim() || "Empty";
+            seat.querySelector("small").textContent = finalName;
+
+            if (finalName !== "Empty") {
+              seat.classList.add("occupied");
+            } else {
+              seat.classList.remove("occupied");
+            }
+
+            await loadSession();
+          }
+        );
       };
 
       grid.appendChild(seat);
     }
   }
 
-  // Sync Attendance Recap table
   renderAttendance(seating);
 }
 
@@ -117,15 +127,22 @@ function renderAttendance(seating) {
   body.innerHTML = "";
 
   const entries = Object.entries(seating);
+
   if (entries.length === 0) {
-    body.innerHTML = '<tr><td colspan="4" style="padding: 2rem; text-align: center; color: var(--text-secondary);">No students assigned to seats yet.</td></tr>';
+    body.innerHTML = `
+      <tr>
+        <td colspan="5" style="padding: 2rem; text-align: center; color: var(--text-secondary);">
+          No students assigned to seats yet.
+        </td>
+      </tr>
+    `;
     return;
   }
 
-  // Sort by seat label
   entries.sort((a, b) => {
     const [r1, c1] = a[0].split("_").map(Number);
     const [r2, c2] = b[0].split("_").map(Number);
+
     if (r1 !== r2) return r1 - r2;
     return c1 - c2;
   });
@@ -135,24 +152,45 @@ function renderAttendance(seating) {
     const seatLabel = `${String.fromCharCode(65 + r)}${c + 1}`;
 
     const tr = document.createElement("tr");
+
     tr.innerHTML = `
-      <td style="padding: 0.75rem;"><strong style="color: var(--accent-primary);">${seatLabel}</strong></td>
+      <td style="padding: 0.75rem;">
+        <strong style="color: var(--accent-primary);">${seatLabel}</strong>
+      </td>
+
       <td style="padding: 0.75rem;">${name}</td>
-      <td style="padding: 0.75rem;" class="accuracy-cell"><span style="color: var(--text-secondary); opacity: 0.5;">—</span></td>
-      <td style="padding: 0.75rem;"><span class="tag tag-present">Present</span></td>
+
+      <td style="padding: 0.75rem;" class="accuracy-cell">
+        <span style="color: var(--text-secondary); opacity: 0.5;">—</span>
+      </td>
+
+      <td style="padding: 0.75rem;">
+        <span class="tag tag-present">Present</span>
+      </td>
+
       <td style="padding: 0.75rem; text-align: right;">
-        <button class="btn btn-outline" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;" onclick="toggleStatus(this)">Mark Absent</button>
+        <button class="btn btn-outline" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;" onclick="toggleStatus(this)">
+          Mark Absent
+        </button>
       </td>
     `;
+
     body.appendChild(tr);
   });
 
-  if (typeof loadHistory === 'function') loadHistory();
+  loadHistory();
 }
+
+/* =========================================================
+   ATTENDANCE STATUS
+   ========================================================= */
 
 function toggleStatus(btn) {
   const tr = btn.closest("tr");
   const tag = tr.querySelector(".tag");
+
+  if (!tag) return;
+
   if (tag.classList.contains("tag-absent")) {
     tag.textContent = "Present";
     tag.className = "tag tag-present";
@@ -166,9 +204,11 @@ function toggleStatus(btn) {
 
 function markAll(status) {
   const rows = $("attendanceBody").querySelectorAll("tr");
+
   rows.forEach(tr => {
     const tag = tr.querySelector(".tag");
     const btn = tr.querySelector("button");
+
     if (!tag || !btn) return;
 
     if (status === "Present") {
@@ -183,27 +223,53 @@ function markAll(status) {
   });
 }
 
+/* =========================================================
+   SAVE ATTENDANCE
+   ========================================================= */
+
 async function saveAttendance() {
   const raw = localStorage.getItem(ACTIVE_KEY);
   if (!raw) return;
+
   const assignment = JSON.parse(raw);
 
-  const statusBody = $("attendanceBody");
-  const rows = statusBody.querySelectorAll("tr");
+  const rows = $("attendanceBody").querySelectorAll("tr");
+
   if (rows.length === 0 || rows[0].innerText.includes("No students")) {
     alert("No attendance data to save.");
     return;
   }
 
   const records = [];
+
   rows.forEach(tr => {
     const cells = tr.querySelectorAll("td");
+
+    if (cells.length < 4) return;
+
     const seat = cells[0].textContent.trim();
     const name = cells[1].textContent.trim();
-    const tag = cells[2].querySelector(".tag");
+
+    // IMPORTANT FIX:
+    // cells[2] = Accuracy column
+    // cells[3] = Status column
+    const tag = cells[3].querySelector(".tag");
+
+    if (!tag) return;
+
     const status = tag.classList.contains("tag-present") ? "Present" : "Absent";
-    records.push({ seat, name, status });
+
+    records.push({
+      seat,
+      name,
+      status
+    });
   });
+
+  if (records.length === 0) {
+    alert("No valid attendance records found.");
+    return;
+  }
 
   const btn = $("saveAttendanceBtn");
   btn.disabled = true;
@@ -212,189 +278,214 @@ async function saveAttendance() {
   try {
     const res = await fetch(`${API}/attendance/save`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json"
+      },
       body: JSON.stringify({
         class_id: assignment.class_id,
         subject_id: assignment.subject_id,
-        teacher_username: assignment.teacher_username || "teacher1",
-        date: new Date().toISOString().split('T')[0],
-        records: records
+        teacher_username: assignment.teacher_username || getCurrentUser()?.username || "teacher",
+        date: new Date().toISOString().split("T")[0],
+        records
       })
     });
 
     const data = await res.json();
-    if (data.success) {
-      alert("Attendance saved successfully!");
-      if (typeof loadHistory === 'function') loadHistory();
-    } else {
-      alert("Error saving: " + (data.error || "Unknown error"));
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Failed to save attendance.");
     }
+
+    alert("Attendance saved successfully.");
+    await loadHistory();
+
   } catch (err) {
     console.error("Save error:", err);
-    alert("Connection error while saving attendance.");
+    alert("Connection error while saving attendance: " + err.message);
   } finally {
     btn.disabled = false;
     btn.innerHTML = '<i class="fa-solid fa-save"></i> Save Record';
   }
 }
 
+/* =========================================================
+   LOAD HISTORY
+   ========================================================= */
+
 async function loadHistory() {
   const raw = localStorage.getItem(ACTIVE_KEY);
   if (!raw) return;
-  const assignment = JSON.parse(raw);
 
+  const assignment = JSON.parse(raw);
   const historyList = $("historyList");
+
   if (!historyList) return;
 
   try {
     const res = await fetch(`${API}/attendance/records`);
     const allRecords = await res.json();
 
-    // Filter for THIS class
-    const classRecords = allRecords.filter(r => r.class_id === assignment.class_id).reverse();
+    const classRecords = allRecords
+      .filter(r => String(r.class_id) === String(assignment.class_id))
+      .reverse();
 
     if (classRecords.length === 0) {
-      historyList.innerHTML = '<div style="padding: 1rem; text-align: center; color: var(--text-secondary); font-size: 0.8rem;">No past sessions found.</div>';
+      historyList.innerHTML = `
+        <div style="padding: 1rem; text-align: center; color: var(--text-secondary); font-size: 0.8rem;">
+          No past sessions found.
+        </div>
+      `;
       return;
     }
 
-    historyList.innerHTML = classRecords.map(rec => `
-      <div style="padding: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.8rem;">
-        <div class="flex justify-between">
-          <strong style="color: var(--accent-primary);">${rec.date}</strong>
-          <span style="color: var(--text-secondary);">${rec.records.filter(s => s.status === "Present").length} / ${rec.records.length} Present</span>
+    historyList.innerHTML = classRecords.map(rec => {
+      const presentCount = (rec.records || []).filter(s => s.status === "Present").length;
+      const totalCount = (rec.records || []).length;
+
+      return `
+        <div style="padding: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.8rem;">
+          <div class="flex justify-between">
+            <strong style="color: var(--accent-primary);">${rec.date}</strong>
+            <span style="color: var(--text-secondary);">
+              ${presentCount} / ${totalCount} Present
+            </span>
+          </div>
+          <div style="font-size: 0.7rem; color: var(--text-secondary); margin-top: 0.25rem;">
+            Saved at ${rec.timestamp || "N/A"}
+          </div>
         </div>
-        <div style="font-size: 0.7rem; color: var(--text-secondary); margin-top: 0.25rem;">Saved at ${rec.timestamp}</div>
-      </div>
-    `).join("");
+      `;
+    }).join("");
 
   } catch (err) {
     console.error("History error:", err);
-    historyList.innerHTML = '<div style="color: #f87171; padding: 1rem;">Failed to load history.</div>';
+    historyList.innerHTML = `
+      <div style="color: #f87171; padding: 1rem;">
+        Failed to load history.
+      </div>
+    `;
   }
 }
 
+/* =========================================================
+   PUBLIC DEMO AI RESULT LOADER
+   ========================================================= */
 
 async function runVideoAttendance() {
   const btn = $("runAiBtn");
   const statusBody = $("attendanceBody");
 
-  if (!confirm("Run AI Face Recognition on the latest classroom video? \nThis may take a few moments.")) return;
-
   btn.disabled = true;
-  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Initializing...';
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Loading AI Result...';
 
   try {
-    // 1. Trigger the background process
-    const runRes = await fetch(`${API}/attendance/run`, { method: "POST" });
-    const runData = await runRes.json();
+    const res = await fetch(`${API}/attendance/latest-ai-result`);
+    const aiResults = await res.json();
 
-    if (!runRes.ok || !runData.success) {
-      throw new Error(runData.error || "Failed to start AI process");
+    if (!res.ok) {
+      throw new Error(aiResults.error || "Failed to load AI attendance result");
     }
 
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> AI Processing...';
+    const rows = statusBody.querySelectorAll("tr");
 
-    // 2. Poll for status
-    const pollInterval = 3000; // 3 seconds
-    let attempts = 0;
-    const maxAttempts = 200; // 10 minutes total
+    let totalConfidence = 0;
+    let matchedStudents = 0;
 
-    const pollStatus = async () => {
-      const statusRes = await fetch(`${API}/attendance/status`);
-      const statusData = await statusRes.json();
+    rows.forEach(tr => {
+      const cells = tr.querySelectorAll("td");
 
-      if (statusData.status === "running") {
-        attempts++;
-        if (attempts > maxAttempts) {
-          throw new Error("AI Processing timed out.");
-        }
-        setTimeout(pollStatus, pollInterval);
-        return;
-      }
+      if (cells.length < 4) return;
 
-      if (statusData.status === "error") {
-        throw new Error(statusData.error || "AI Processing Failed");
-      }
+      const studentName = cells[1].textContent.trim().toLowerCase();
+      const accuracyCell = tr.querySelector(".accuracy-cell");
+      const statusTag = cells[3].querySelector(".tag");
+      const actionBtn = tr.querySelector("button");
 
-      if (statusData.status === "success") {
-        handleAiSuccess(statusData.data);
-      }
-    };
+      if (!studentName || !accuracyCell || !statusTag) return;
 
-    const handleAiSuccess = (aiResults) => {
-      const rows = statusBody.querySelectorAll("tr");
-      let totalConf = 0;
-      let matchCount = 0;
+      const aiRecord = aiResults.find(r =>
+        (r.name || "").trim().toLowerCase() === studentName
+      );
 
-      rows.forEach(tr => {
-        const nameCell = tr.querySelectorAll("td")[1];
-        if (!nameCell) return;
-        const studentName = nameCell.textContent.trim();
-        const aiRecord = aiResults.find(r => r.name === studentName);
+      if (aiRecord && (aiRecord.present === "YES" || aiRecord.status === "Present")) {
+        const confidence = parseFloat(
+          aiRecord.accuracy ||
+          aiRecord.avg_confidence ||
+          aiRecord.confidence ||
+          90
+        );
 
-        const accuracyCell = tr.querySelector(".accuracy-cell");
-        const tag = tr.querySelector(".tag");
-        const actionBtn = tr.querySelector("button");
+        accuracyCell.innerHTML = `
+          <span class="status status-ok" style="font-size: 0.7rem;">
+            ${Math.round(confidence)}% Match
+          </span>
+        `;
 
-        if (aiRecord && aiRecord.present === "YES") {
-          const dist = parseFloat(aiRecord.avg_confidence || 0);
-          let accuracy;
-          if (dist > 2) {
-            accuracy = Math.max(0, Math.min(100, 100 - dist));
-          } else {
-            accuracy = Math.max(0, Math.min(100, (1 - dist) * 100));
-          }
+        statusTag.textContent = "Present";
+        statusTag.className = "tag tag-present";
 
-          accuracyCell.innerHTML = `<span class="status status-ok" style="font-size: 0.7rem;">${Math.round(accuracy)}% Match</span>`;
-          totalConf += accuracy;
-          matchCount++;
-
-          tag.textContent = "Present";
-          tag.className = "tag tag-present";
+        if (actionBtn) {
           actionBtn.textContent = "Mark Absent";
-        } else {
-          accuracyCell.innerHTML = `<span class="status status-inactive" style="font-size: 0.7rem; opacity: 0.6;">No Match</span>`;
-          tag.textContent = "Absent";
-          tag.className = "tag tag-absent";
+        }
+
+        totalConfidence += confidence;
+        matchedStudents++;
+
+      } else {
+        accuracyCell.innerHTML = `
+          <span class="status status-inactive" style="font-size: 0.7rem; opacity: 0.6;">
+            No Match
+          </span>
+        `;
+
+        statusTag.textContent = "Absent";
+        statusTag.className = "tag tag-absent";
+
+        if (actionBtn) {
           actionBtn.textContent = "Mark Present";
         }
-      });
-
-      // Update Global Model Accuracy Box
-      const accBox = $("accuracyBox");
-      if (matchCount > 0) {
-        const globalAcc = totalConf / matchCount;
-        accBox.innerHTML = `
-          <div class="accuracy-card">
-            <div>
-              <div class="accuracy-label">AI Model Performance</div>
-              <div style="font-size: 0.8rem; color: var(--text-secondary);">Average recognition confidence for this session</div>
-            </div>
-            <div class="accuracy-value">${globalAcc.toFixed(1)}%</div>
-          </div>
-        `;
-      } else {
-        accBox.innerHTML = "";
       }
+    });
 
-      alert("Attendance processed! Check the recap table below.");
-      btn.disabled = false;
-      btn.innerHTML = '<i class="fa-solid fa-robot"></i> Run AI Attendance';
-    };
+    const accBox = $("accuracyBox");
 
-    // Start polling
-    pollStatus();
+    if (matchedStudents > 0) {
+      const avgConfidence = totalConfidence / matchedStudents;
+
+      accBox.innerHTML = `
+        <div class="accuracy-card">
+          <div>
+            <div class="accuracy-label">AI Model Performance</div>
+            <div style="font-size: 0.8rem; color: var(--text-secondary);">
+              Loaded from processed AI attendance result
+            </div>
+          </div>
+          <div class="accuracy-value">${avgConfidence.toFixed(1)}%</div>
+        </div>
+      `;
+    } else {
+      accBox.innerHTML = `
+        <div class="tag tag-absent">
+          No students matched by AI
+        </div>
+      `;
+    }
+
+    alert("AI attendance result loaded successfully.");
 
   } catch (e) {
-    console.error("AI Error:", e);
+    console.error("AI Result Error:", e);
     alert("AI Error: " + e.message);
+  } finally {
     btn.disabled = false;
-    btn.innerHTML = '<i class="fa-solid fa-robot"></i> Run AI Attendance';
+    btn.innerHTML = '<i class="fa-solid fa-robot"></i> Load AI Attendance Result';
   }
 }
 
-// Modal Logic
+/* =========================================================
+   SEAT MODAL
+   ========================================================= */
+
 let currentSaveCallback = null;
 
 function openSeatModal(label, currentName, onSave) {
@@ -415,38 +506,59 @@ function closeSeatModal() {
   currentSaveCallback = null;
 }
 
-// Wire up Modal Buttons (Run once)
-(function wireModalParams() {
-  // Check if buttons exist to avoid double-wiring if init runs multiple times
-  if ($("modalSaveBtn").dataset.wired) return;
+function wireSeatModal() {
+  const saveBtn = $("modalSaveBtn");
+  const cancelBtn = $("modalCancelBtn");
+  const input = $("modalStudentName");
 
-  $("modalSaveBtn").addEventListener("click", () => {
+  if (!saveBtn || saveBtn.dataset.wired) return;
+
+  saveBtn.addEventListener("click", async () => {
     if (currentSaveCallback) {
-      const name = $("modalStudentName").value.trim();
-      currentSaveCallback(name);
+      const name = input.value.trim();
+      await currentSaveCallback(name);
     }
+
     closeSeatModal();
   });
 
-  $("modalCancelBtn").addEventListener("click", closeSeatModal);
+  cancelBtn.addEventListener("click", closeSeatModal);
 
-  // Allow Enter key to save
-  $("modalStudentName").addEventListener("keyup", (e) => {
+  input.addEventListener("keyup", (e) => {
     if (e.key === "Enter") {
-      $("modalSaveBtn").click();
+      saveBtn.click();
     }
   });
 
-  $("modalSaveBtn").dataset.wired = "true";
-})();
+  saveBtn.dataset.wired = "true";
+}
 
 async function saveSeat(classId, row, col, name) {
-  await fetch(`${API}/classes/seat`, {
+  const res = await fetch(`${API}/classes/seat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ class_id: classId, row, col, name })
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      class_id: classId,
+      row,
+      col,
+      name
+    })
   });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(data.error || "Failed to save seat.");
+  }
+
+  return data;
 }
+
+/* =========================================================
+   SESSION UI
+   ========================================================= */
 
 function updateSessionUI() {
   const badge = $("stateBadge");
@@ -454,30 +566,40 @@ function updateSessionUI() {
   const pauseBtn = $("pauseBtn");
   const endBtn = $("endBtn");
 
-  badge.className = "status"; // reset
+  badge.className = "status";
+
   startBtn.disabled = false;
   pauseBtn.disabled = true;
   endBtn.disabled = true;
 
+  startBtn.innerHTML = '<i class="fa-solid fa-play"></i> Start';
+
   if (sessionState === "IDLE") {
     badge.textContent = "IDLE";
     badge.classList.add("status-inactive");
+
   } else if (sessionState === "RUNNING") {
     badge.textContent = "LIVE";
     badge.classList.add("status-active");
+
     startBtn.disabled = true;
     pauseBtn.disabled = false;
     endBtn.disabled = false;
+
   } else if (sessionState === "PAUSED") {
     badge.textContent = "PAUSED";
     badge.classList.add("status-warning");
-    startBtn.disabled = false; // can resume
+
+    startBtn.disabled = false;
     startBtn.innerHTML = '<i class="fa-solid fa-play"></i> Resume';
+
     pauseBtn.disabled = true;
     endBtn.disabled = false;
+
   } else if (sessionState === "ENDED") {
     badge.textContent = "ENDED";
     badge.classList.add("status-inactive");
+
     startBtn.disabled = true;
     pauseBtn.disabled = true;
     endBtn.disabled = true;
@@ -503,19 +625,25 @@ function wireSessionUI() {
   });
 }
 
-// --- Camera Logic ---
+/* =========================================================
+   CAMERA LOGIC
+   ========================================================= */
 
 function setStatus(text, ok = null) {
   const s = $("camStatus");
+
+  if (!s) return;
+
   s.textContent = text;
   s.classList.remove("status-ok", "status-bad");
+
   if (ok === true) s.classList.add("status-ok");
   if (ok === false) s.classList.add("status-bad");
 }
 
 function showImg(show) {
   $("camImg").style.display = show ? "block" : "none";
-  $("camPlaceholder").style.display = show ? "none" : "block";
+  $("camPlaceholder").style.display = show ? "none" : "flex";
 }
 
 function stopSnapshotLoop() {
@@ -533,13 +661,16 @@ function disconnectCamera() {
   stopReconnectLoop();
 
   const img = $("camImg");
+
   img.onload = null;
   img.onerror = null;
-  img.src = ""; // stop stream
+  img.src = "";
 
   camConnected = false;
+
   showImg(false);
   setStatus("Status: disconnected", null);
+
   $("camHint").textContent = "";
   $("disconnectBtn").style.display = "none";
   $("connectBtn").style.display = "inline-flex";
@@ -548,10 +679,15 @@ function disconnectCamera() {
 function normalizeUrl(url, mode) {
   try {
     const u = new URL(url);
+
     if (u.pathname === "/" || u.pathname === "") {
-      if (mode === "snapshot") u.pathname = "/capture";
+      if (mode === "snapshot") {
+        u.pathname = "/capture";
+      }
     }
+
     return u.toString();
+
   } catch {
     return url;
   }
@@ -559,8 +695,8 @@ function normalizeUrl(url, mode) {
 
 function startSnapshotLoop(url, fps) {
   stopSnapshotLoop();
-  const img = $("camImg");
 
+  const img = $("camImg");
   const intervalMs = Math.max(100, Math.floor(1000 / fps));
 
   camTimer = setInterval(() => {
@@ -572,13 +708,16 @@ function startSnapshotLoop(url, fps) {
 
 function connectMJPEG(url) {
   const img = $("camImg");
+
   showImg(true);
   setStatus("Status: connecting (MJPEG)…", null);
 
   img.onload = () => {
     camConnected = true;
     lastFrameAt = Date.now();
+
     setStatus("Status: connected ✅ (MJPEG)", true);
+
     $("disconnectBtn").style.display = "inline-flex";
     $("connectBtn").style.display = "none";
   };
@@ -594,13 +733,16 @@ function connectMJPEG(url) {
 
 function connectSnapshot(url, fps) {
   const img = $("camImg");
+
   showImg(true);
   setStatus(`Status: connecting (Snapshot @ ${fps} fps)…`, null);
 
   img.onload = () => {
     camConnected = true;
     lastFrameAt = Date.now();
+
     setStatus(`Status: connected ✅ (Snapshot @ ${fps} fps)`, true);
+
     $("disconnectBtn").style.display = "inline-flex";
     $("connectBtn").style.display = "none";
   };
@@ -614,12 +756,14 @@ function connectSnapshot(url, fps) {
 
   const bust = `t=${Date.now()}`;
   const sep = url.includes("?") ? "&" : "?";
+
   img.src = url + sep + bust;
   startSnapshotLoop(url, fps);
 }
 
 function startAutoReconnect() {
   stopReconnectLoop();
+
   const enabled = $("autoReconnect")?.checked;
 
   if (!enabled) return;
@@ -627,6 +771,7 @@ function startAutoReconnect() {
   reconnectTimer = setInterval(() => {
     const staleMs = 6000;
     const now = Date.now();
+
     const isStale = camConnected && (now - lastFrameAt > staleMs);
 
     if (isStale) {
@@ -642,7 +787,9 @@ function doConnect(isAuto = false) {
   const fps = parseInt($("camFps").value, 10) || 5;
 
   if (!rawUrl) {
-    if (!isAuto) setStatus("Status: enter a camera URL first", false);
+    if (!isAuto) {
+      setStatus("Status: enter a camera URL first", false);
+    }
     return;
   }
 
@@ -655,7 +802,7 @@ function doConnect(isAuto = false) {
   disconnectCamera();
 
   if (mode === "mjpeg") {
-    $("camHint").textContent = "Hint: ESP32 often uses /stream (sometimes port :81).";
+    $("camHint").textContent = "Hint: ESP32 often uses /stream, sometimes port :81.";
     connectMJPEG(url);
   } else {
     $("camHint").textContent = "Hint: Snapshot often uses /capture.";
@@ -666,13 +813,9 @@ function doConnect(isAuto = false) {
 }
 
 function restoreCamSettings() {
-  const savedUrl = localStorage.getItem(CAM_URL_KEY) || "";
-  const savedMode = localStorage.getItem(CAM_MODE_KEY) || "mjpeg";
-  const savedFps = localStorage.getItem(CAM_FPS_KEY) || "5";
-
-  $("camUrl").value = savedUrl;
-  $("camMode").value = savedMode;
-  $("camFps").value = savedFps;
+  $("camUrl").value = localStorage.getItem(CAM_URL_KEY) || "";
+  $("camMode").value = localStorage.getItem(CAM_MODE_KEY) || "mjpeg";
+  $("camFps").value = localStorage.getItem(CAM_FPS_KEY) || "5";
 }
 
 function wireCameraUI() {
@@ -684,18 +827,23 @@ function wireCameraUI() {
   $("camMode").addEventListener("change", () => {
     if ($("camUrl").value.trim()) doConnect(false);
   });
+
   $("camFps").addEventListener("change", () => {
-    if ($("camMode").value === "snapshot" && $("camUrl").value.trim()) doConnect(false);
+    if ($("camMode").value === "snapshot" && $("camUrl").value.trim()) {
+      doConnect(false);
+    }
   });
 
-  // Video Upload
   $("uploadTriggerBtn").addEventListener("click", () => $("videoUpload").click());
+
   $("videoUpload").addEventListener("change", async (e) => {
     const file = e.target.files[0];
+
     if (!file) return;
 
     const btn = $("uploadTriggerBtn");
     const originalHtml = btn.innerHTML;
+
     btn.disabled = true;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
 
@@ -707,26 +855,36 @@ function wireCameraUI() {
         method: "POST",
         body: formData
       });
+
       const data = await res.json();
-      if (data.success) {
-        alert("Video uploaded successfully: " + data.filename + "\nYou can now run AI Attendance.");
-      } else {
-        alert("Upload failed: " + (data.error || "Unknown error"));
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Upload failed.");
       }
+
+      alert("Video uploaded successfully: " + data.filename);
+
     } catch (err) {
       console.error("Upload error:", err);
-      alert("Error uploading video.");
+      alert("Error uploading video: " + err.message);
+
     } finally {
       btn.disabled = false;
       btn.innerHTML = originalHtml;
-      e.target.value = ""; // clear input
+      e.target.value = "";
     }
   });
 }
 
+/* =========================================================
+   INIT
+   ========================================================= */
+
 (function init() {
   loadSession();
+  wireSeatModal();
   wireSessionUI();
   wireCameraUI();
+
   $("saveAttendanceBtn").addEventListener("click", saveAttendance);
 })();

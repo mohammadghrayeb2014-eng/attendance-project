@@ -67,19 +67,18 @@
   <!-- Legacy Script -->
   <script src="js/auth.js?v=1.1"></script>
   <script>
-    // CRITICAL: only call auth.js login(), no redirects here
-    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+      document.getElementById("loginForm").addEventListener("submit", async (e) => {
       e.preventDefault();
+
       const btn = e.target.querySelector('button[type="submit"]');
       const originalText = btn.innerHTML;
 
-      // Loading state
+      btn.disabled = true;
       btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Signing in...';
 
       const username = document.getElementById("username").value.trim();
       const password = document.getElementById("password").value;
 
-      // Allow UI to update
       await new Promise(r => setTimeout(r, 500));
 
       const result = await login(username, password);
@@ -87,8 +86,8 @@
       if (!result.ok) {
         document.getElementById("error").textContent = result.error;
         btn.innerHTML = originalText;
+        btn.disabled = false;
       }
-      // If ok, login() handles redirect
     });
   </script>
 </body>

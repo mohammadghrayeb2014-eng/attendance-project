@@ -1,12 +1,29 @@
-# Ignore heavy AI items for Vercel deployment
+# Heavy AI/model/data files
 models/
 all students/
-data/
 output/
 scripts/
+
 *.pt
 *.h5
 *.weights
+*.pkl
+*.onnx
+*.yml
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.HEIC
+
+# Python/Node/env
 node_modules/
 venv/
+__pycache__/
+*.pyc
 .env
+
+# Ignore heavy data subfolders only
+data/students/
+data/classroom_videos/
+data/debug_frames/
