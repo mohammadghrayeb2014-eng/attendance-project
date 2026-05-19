@@ -120,85 +120,232 @@
           <div id="status" class="error-toast" style="color: #10b981;"></div>
         </div>
 
-        <div class="card">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-            <h3 style="margin: 0;"><i class="fa-solid fa-screwdriver-wrench gradient-text"></i> Academic Tools</h3>
-            <div style="display: flex; background: var(--p-50); padding: 0.25rem; border-radius: 1rem;">
-              <button id="tabExam" class="nav-link active"
-                style="padding: 0.5rem 1rem; margin: 0; font-size: 0.85rem; border-radius: 0.75rem;">Exams</button>
-              <button id="tabHomework" class="nav-link"
-                style="padding: 0.5rem 1rem; margin: 0; font-size: 0.85rem; border-radius: 0.75rem;">Homework</button>
-            </div>
-          </div>
+<div class="card">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+    <h3 style="margin: 0;">
+      <i class="fa-solid fa-screwdriver-wrench gradient-text"></i> Academic Tools
+    </h3>
 
-          <div id="examContainer">
-            <div class="input-group">
-              <label>Exam Title</label>
-              <input id="examTitle" class="input-field" placeholder="e.g. Midterm Physics">
-            </div>
-            <div class="input-group" style="margin-bottom: 2rem;">
-              <label>Scheduled Date</label>
-              <input id="examDate" type="date" class="input-field">
-            </div>
-            <button id="createExamBtn" class="btn-premium w-full">Deploy Exam Entry</button>
-          </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; background: var(--p-50); padding: 0.25rem; border-radius: 1rem;">
+      <button id="tabExam" class="nav-link active"
+        style="padding: 0.5rem 1rem; margin: 0; font-size: 0.85rem; border-radius: 0.75rem;">
+        Exams
+      </button>
 
-          <div id="homeworkContainer" style="display: none;">
-            <div class="input-group">
-              <label>Module/Assignment Name</label>
-              <input id="hwTitle" class="input-field" placeholder="e.g. Chapter 4 Quiz">
-            </div>
-            <div class="input-group">
-              <label>Submission Deadline</label>
-              <input id="hwDueDate" type="date" class="input-field">
-            </div>
-            <button id="createHwBtn" class="btn-premium w-full">Post Assignment</button>
-          </div>
+      <button id="tabHomework" class="nav-link"
+        style="padding: 0.5rem 1rem; margin: 0; font-size: 0.85rem; border-radius: 0.75rem;">
+        Homework
+      </button>
 
-          <div id="academicMsg" class="error-toast" style="color: #10b981; margin-top: 1rem;"></div>
-        </div>
+      <button id="tabGrading" class="nav-link"
+        style="padding: 0.5rem 1rem; margin: 0; font-size: 0.85rem; border-radius: 0.75rem;">
+        Grading
+      </button>
+
+      <button id="tabGradebook" class="nav-link"
+        style="padding: 0.5rem 1rem; margin: 0; font-size: 0.85rem; border-radius: 0.75rem;">
+        Gradebook
+      </button>
+
+      <button id="tabReports" class="nav-link"
+        style="padding: 0.5rem 1rem; margin: 0; font-size: 0.85rem; border-radius: 0.75rem;">
+        Reports
+      </button>
+    </div>
+  </div>
+
+  <!-- Exams -->
+  <div id="examContainer">
+    <div class="input-group">
+      <label>Exam / Quiz Title</label>
+      <input id="examTitle" class="input-field" placeholder="e.g. Quiz 1">
+    </div>
+
+    <div class="input-group">
+      <label>Type</label>
+      <select id="examKind" class="input-field">
+        <option value="exam">Exam</option>
+        <option value="quiz">Quiz</option>
+        <option value="midterm">Midterm</option>
+        <option value="final">Final</option>
+      </select>
+    </div>
+
+    <div class="input-group" style="margin-bottom: 2rem;">
+      <label>Scheduled Date</label>
+      <input id="examDate" type="date" class="input-field">
+    </div>
+
+    <button id="createExamBtn" class="btn-premium w-full">
+      Create Exam / Quiz
+    </button>
+  </div>
+
+  <!-- Homework -->
+  <div id="homeworkContainer" style="display: none;">
+    <div class="input-group">
+      <label>Homework Title</label>
+      <input id="hwTitle" class="input-field" placeholder="e.g. Chapter 4 Exercises">
+    </div>
+
+    <div class="input-group">
+      <label>Description</label>
+      <input id="hwDesc" class="input-field" placeholder="Optional homework details">
+    </div>
+
+    <div class="input-group">
+      <label>Submission Deadline</label>
+      <input id="hwDueDate" type="date" class="input-field">
+    </div>
+
+    <button id="createHwBtn" class="btn-premium w-full">
+      Post Homework
+    </button>
+  </div>
+
+  <!-- Grading -->
+  <div id="gradingContainer" style="display: none;">
+    <div class="input-group">
+      <label>Select Exam or Homework</label>
+      <select id="gradeItemSelect" class="input-field">
+        <option value="">-- Choose item --</option>
+      </select>
+    </div>
+
+    <div id="gradingList" style="margin-top: 1rem; max-height: 320px; overflow-y: auto;">
+      <div class="text-muted" style="padding: 1rem; text-align: center;">
+        Select an item to grade.
       </div>
     </div>
-  </main>
 
+    <button id="saveGradesBtn" class="btn-premium w-full" style="display: none; margin-top: 1rem;">
+      <i class="fa-solid fa-save"></i> Save All Grades
+    </button>
+  </div>
+
+  <!-- Gradebook -->
+  <div id="gradebookContainer" style="display: none;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; gap: 1rem; flex-wrap: wrap;">
+      <h4 style="margin: 0;">Class Gradebook</h4>
+
+      <button id="exportGradesBtn" class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.8rem;">
+        <i class="fa-solid fa-file-export"></i> Export CSV
+      </button>
+    </div>
+
+    <div id="gradebookView" style="overflow-x: auto; max-height: 350px;">
+      <div class="text-muted" style="padding: 1rem; text-align: center;">
+        Gradebook will appear here.
+      </div>
+    </div>
+  </div>
+
+  <!-- Reports -->
+  <div id="reportsContainer" style="display: none;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; gap: 1rem; flex-wrap: wrap;">
+      <h4 style="margin: 0;">Attendance Report</h4>
+
+      <button id="exportReportsBtn" class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.8rem;">
+        <i class="fa-solid fa-file-export"></i> Export CSV
+      </button>
+    </div>
+
+    <div id="reportsView" style="overflow-x: auto; max-height: 350px;">
+      <div class="text-muted" style="padding: 1rem; text-align: center;">
+        Reports will appear here.
+      </div>
+    </div>
+  </div>
+
+  <div id="academicMsg" class="error-toast" style="color: #10b981; margin-top: 1rem;"></div>
+</div>
   <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      protectPage("teacher");
-      const user = getCurrentUser();
-      if (user) {
-        document.getElementById("who").textContent = "Signed in as: " + user.name;
-        // Update avatar initials if name is available 
-        const avatar = document.querySelector(".avatar");
-        if (user.name) {
-          const initials = user.name.split(" ").map(n => n[0]).join("").toUpperCase().substring(0, 2);
-          avatar.textContent = initials;
-        }
+  document.addEventListener("DOMContentLoaded", () => {
+    protectPage("teacher");
+
+    const user = getCurrentUser();
+
+    if (user) {
+      const who = document.getElementById("who");
+      if (who) who.textContent = "Signed in as: " + (user.name || user.username);
+
+      const avatar = document.querySelector(".avatar");
+      if (avatar) {
+        const name = user.name || user.username || "Teacher";
+        const initials = name
+          .split(" ")
+          .map(n => n[0])
+          .join("")
+          .toUpperCase()
+          .substring(0, 2);
+
+        avatar.textContent = initials;
       }
-      document.getElementById("logoutBtn").addEventListener("click", (e) => { e.preventDefault(); logout(); });
+    }
 
-      // Mobile Menu Logic
-      const hamberBtn = document.getElementById("hamburgerBtn");
-      const sidebar = document.querySelector(".sidebar");
-      const overlay = document.getElementById("sidebarOverlay");
+    const logoutBtn = document.getElementById("logoutBtn");
+    if (logoutBtn) {
+      logoutBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        logout();
+      });
+    }
 
-      const toggleMenu = () => {
-        if (!hamberBtn) return;
-        hamberBtn.classList.toggle("active");
-        sidebar.classList.toggle("open");
-        overlay.classList.toggle("open");
-      };
+    const hamburgerBtn = document.getElementById("hamburgerBtn");
+    const sidebar = document.querySelector(".sidebar");
+    const overlay = document.getElementById("sidebarOverlay");
 
-      if (hamberBtn) {
-        hamberBtn.addEventListener("click", toggleMenu);
-        overlay.addEventListener("click", toggleMenu);
-        document.querySelectorAll(".nav-link").forEach(link => {
-          link.addEventListener("click", () => {
-            if (sidebar.classList.contains("open")) toggleMenu();
-          });
-        });
+    function openMenu() {
+      if (!hamburgerBtn || !sidebar || !overlay) return;
+
+      hamburgerBtn.classList.add("active");
+      sidebar.classList.add("open");
+      overlay.classList.add("open");
+      document.body.classList.add("menu-open");
+    }
+
+    function closeMenu() {
+      if (!hamburgerBtn || !sidebar || !overlay) return;
+
+      hamburgerBtn.classList.remove("active");
+      sidebar.classList.remove("open");
+      overlay.classList.remove("open");
+      document.body.classList.remove("menu-open");
+    }
+
+    function toggleMenu() {
+      if (!sidebar) return;
+
+      if (sidebar.classList.contains("open")) {
+        closeMenu();
+      } else {
+        openMenu();
+      }
+    }
+
+    if (hamburgerBtn) {
+      hamburgerBtn.addEventListener("click", toggleMenu);
+    }
+
+    if (overlay) {
+      overlay.addEventListener("click", closeMenu);
+    }
+
+    document.querySelectorAll(".sidebar .nav-link").forEach(link => {
+      link.addEventListener("click", () => {
+        if (window.innerWidth <= 768) {
+          closeMenu();
+        }
+      });
+    });
+
+    window.addEventListener("resize", () => {
+      if (window.innerWidth > 768) {
+        closeMenu();
       }
     });
-  </script>
+  });
+</script>
 </body>
 
 </html>

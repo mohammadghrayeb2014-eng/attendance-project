@@ -1,28 +1,73 @@
-// js/teacher.js
-// Phase 2-ready teacher dashboard: select assignment -> open class.html
-
+// teacher.js
 const API = "/api";
 const ACTIVE_KEY = "active_assignment";
 
-let allItems = [];     // all assignments for this teacher (decorated)
-let selected = null;   // currently selected assignment
+let allItems = [];
+let selected = null;
 
-async function fetchJSON(url, options) {
+/* =========================================================
+   Utilities
+   ========================================================= */
+
+async function fetchJSON(url, options = {}) {
   const res = await fetch(url, options);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || "Request failed");
+
+  if (!res.ok) {
+    throw new Error(data.error || "Request failed");
+  }
+
   return data;
 }
 
 function el(tag, className, text) {
   const x = document.createElement(tag);
+
   if (className) x.className = className;
   if (text !== undefined) x.textContent = text;
+
   return x;
 }
 
+function normalize(v) {
+  return String(v || "").trim().toLowerCase();
+}
+
+function sameId(a, b) {
+  return String(a) === String(b);
+}
+
+function showMsg(text, isError = false) {
+  const msgEl = document.getElementById("academicMsg");
+
+  if (!msgEl) return;
+
+  msgEl.textContent = text || "";
+  msgEl.className = isError ? "tag tag-absent" : "tag tag-present";
+  msgEl.style.display = text ? "inline-block" : "none";
+}
+
+function getSelectedOrAlert() {
+  if (!selected) {
+    alert("Please select a class first.");
+    document.getElementById("panelClasses")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start"
+    });
+    return null;
+  }
+
+  return selected;
+}
+
+/* =========================================================
+   Selected Class UI
+   ========================================================= */
+
 function setSelectedUI(item) {
   const box = document.getElementById("selectedBox");
+  if (!box) return;
+
   box.innerHTML = "";
   box.style.display = "flex";
   box.style.flexDirection = "column";
@@ -32,7 +77,10 @@ function setSelectedUI(item) {
   title.style.fontSize = "1.25rem";
   title.style.fontWeight = "800";
   title.style.color = "var(--p-600)";
-  title.innerHTML = `<i class="fa-solid fa-graduation-cap" style="margin-right: 0.5rem;"></i>${item.class_name}`;
+  title.innerHTML = `
+    <i class="fa-solid fa-graduation-cap" style="margin-right: 0.5rem;"></i>
+    ${item.class_name}
+  `;
 
   const subtitle = el("div", "", "");
   subtitle.style.fontSize = "1rem";
@@ -44,32 +92,101 @@ function setSelectedUI(item) {
   meta.style.marginTop = "0.5rem";
   meta.innerHTML = `
     <div class="pill"><i class="fa-solid fa-chair"></i> ${item.rows}x${item.cols}</div>
-    <div class="pill"><i class="fa-solid fa-hashtag"></i> ID: ${item.class_id}</div>
+    <div class="pill"><i class="fa-solid fa-hashtag"></i> Class ID: ${item.class_id}</div>
+    <div class="pill"><i class="fa-solid fa-book"></i> Subject ID: ${item.subject_id}</div>
   `;
 
   box.appendChild(title);
   box.appendChild(subtitle);
   box.appendChild(meta);
 
-  document.getElementById("openBtn").disabled = false;
-  document.getElementById("status").textContent = "";
+  const openBtn = document.getElementById("openBtn");
+  if (openBtn) openBtn.disabled = false;
+
+  const status = document.getElementById("status");
+  if (status) status.textContent = "";
+}
+
+/* =========================================================
+   Teacher Assignments
+   ========================================================= */
+
+async function loadTeacherAssignments() {
+  const user = getCurrentUser();
+
+  if (!user) {
+    window.location.href = "login.html";
+    return;
+  }
+
+  const username = normalize(user.username);
+
+  const [assignments, classes, subjects] = await Promise.all([
+    fetchJSON(`${API}/assignments`),
+    fetchJSON(`${API}/classes`),
+    fetchJSON(`${API}/subjects`)
+  ]);
+
+  const classById = new Map(classes.map(c => [String(c.id), c]));
+  const subjectById = new Map(subjects.map(s => [String(s.id), s]));
+
+  const mine = assignments.filter(a =>
+    normalize(a.teacher_username) === username
+  );
+
+  allItems = mine.map(a => {
+    const c = classById.get(String(a.class_id));
+    const s = subjectById.get(String(a.subject_id));
+
+    return {
+      teacher_username: a.teacher_username,
+      class_id: Number(a.class_id),
+      subject_id: Number(a.subject_id),
+      class_name: c?.name || "Unknown class",
+      subject_name: s?.name || "Unknown subject",
+      rows: c?.rows || 0,
+      cols: c?.cols || 0,
+      seating: c?.seating || {}
+    };
+  });
+
+  selected = null;
+
+  const selectedBox = document.getElementById("selectedBox");
+  if (selectedBox) selectedBox.textContent = "Select a classroom from the left to initialize a live session.";
+
+  const openBtn = document.getElementById("openBtn");
+  if (openBtn) openBtn.disabled = true;
+
+  renderList(allItems);
 }
 
 function renderList(items) {
   const list = document.getElementById("list");
   const emptyMsg = document.getElementById("emptyMsg");
 
-  list.innerHTML = "";
-  emptyMsg.style.display = items.length === 0 ? "block" : "none";
+  if (!list) return;
 
-  items.forEach((item) => {
+  list.innerHTML = "";
+
+  if (emptyMsg) {
+    emptyMsg.style.display = items.length === 0 ? "block" : "none";
+  }
+
+  items.forEach(item => {
     const row = el("div", "item");
 
     const left = el("div", "meta");
+
     const title = el("div", "title", `${item.class_name} — ${item.subject_name}`);
-    const sub = el("div", "sub", `Class ID: ${item.class_id} • Subject ID: ${item.subject_id}`);
+    const sub = el(
+      "div",
+      "sub",
+      `Class ID: ${item.class_id} • Subject ID: ${item.subject_id}`
+    );
 
     const pillrow = el("div", "pillrow");
+
     const p1 = el("div", "pill", `${item.rows} x ${item.cols} seats`);
     const p2 = el("div", "pill", `Teacher: ${item.teacher_username}`);
 
@@ -82,11 +199,13 @@ function renderList(items) {
 
     const right = el("div");
     const btn = el("button", "btn-premium-sm", "Select");
+
     btn.addEventListener("click", () => {
       selected = item;
       setSelectedUI(item);
-      loadAcademicData(); // Load academic tools data for selected class
+      loadAcademicData();
     });
+
     right.appendChild(btn);
 
     row.appendChild(left);
@@ -97,239 +216,175 @@ function renderList(items) {
 }
 
 function applySearch() {
-  const q = document.getElementById("searchInput").value.trim().toLowerCase();
+  const q = normalize(document.getElementById("searchInput")?.value);
+
   if (!q) {
     renderList(allItems);
     return;
   }
 
-  const filtered = allItems.filter((i) =>
-    i.class_name.toLowerCase().includes(q) ||
-    i.subject_name.toLowerCase().includes(q)
+  const filtered = allItems.filter(i =>
+    normalize(i.class_name).includes(q) ||
+    normalize(i.subject_name).includes(q)
   );
 
   renderList(filtered);
 }
 
-async function loadTeacherAssignments() {
-  const user = getCurrentUser(); // from auth.js
-  const username = (user.username || "").toLowerCase();
+/* =========================================================
+   Academic Data Overview
+   ========================================================= */
 
-  const [assignments, classes, subjects] = await Promise.all([
-    fetchJSON(`${API}/assignments`),
-    fetchJSON(`${API}/classes`),
-    fetchJSON(`${API}/subjects`)
-  ]);
+async function loadAcademicData() {
+  if (!selected) return;
 
-  const classById = new Map(classes.map((c) => [c.id, c]));
-  const subjectById = new Map(subjects.map((s) => [s.id, s]));
+  const msgEl = document.getElementById("academicMsg");
+  if (!msgEl) return;
 
-  // Only assignments belonging to this teacher
-  const mine = assignments.filter((a) => (a.teacher_username || "").toLowerCase() === username);
+  try {
+    const [exams, homework] = await Promise.all([
+      fetchJSON(`${API}/exams?class_id=${selected.class_id}&subject_id=${selected.subject_id}`).catch(() => []),
+      fetchJSON(`${API}/homework?class_id=${selected.class_id}&subject_id=${selected.subject_id}`).catch(() => [])
+    ]);
 
-  // Decorate with names + seat sizes
-  allItems = mine.map((a) => {
-    const c = classById.get(a.class_id);
-    const s = subjectById.get(a.subject_id);
+    msgEl.className = "tag tag-present";
+    msgEl.style.display = "inline-block";
+    msgEl.textContent = `Loaded ${exams.length} exam(s) and ${homework.length} homework item(s) for this class.`;
 
-    return {
-      teacher_username: a.teacher_username,
-      class_id: a.class_id,
-      subject_id: a.subject_id,
-      class_name: c?.name ?? "Unknown class",
-      subject_name: s?.name ?? "Unknown subject",
-      rows: c?.rows ?? 0,
-      cols: c?.cols ?? 0
-    };
-  });
-
-  // Reset selection each load
-  selected = null;
-  document.getElementById("selectedBox").textContent = "Nothing selected yet.";
-  document.getElementById("openBtn").disabled = true;
-
-  renderList(allItems);
+  } catch (err) {
+    console.error("Failed to load academic data:", err);
+    showMsg("Failed to load academic data.", true);
+  }
 }
 
-function showPanel(panelId) {
-  const panels = ["panelClasses", "panelAcademic"];
-  // Note: academic tools are inside cards, so we mostly scroll or show/hide specific containers
+/* =========================================================
+   Exam Creation
+   ========================================================= */
+
+async function createExam() {
+  const item = getSelectedOrAlert();
+  if (!item) return;
+
+  const title = document.getElementById("examTitle")?.value.trim();
+  const date = document.getElementById("examDate")?.value;
+
+  // Important fix: examKind may not exist in your HTML
+  const kind = document.getElementById("examKind")?.value || "exam";
+
+  if (!title || !date) {
+    showMsg("Please fill exam title and date.", true);
+    return;
+  }
+
+  try {
+    const user = getCurrentUser();
+
+    await fetchJSON(`${API}/exams`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        teacher_username: user.username,
+        class_id: item.class_id,
+        subject_id: item.subject_id,
+        title,
+        kind,
+        date
+      })
+    });
+
+    document.getElementById("examTitle").value = "";
+    document.getElementById("examDate").value = "";
+
+    showMsg("✅ Exam created successfully.");
+
+    await loadAcademicData();
+
+  } catch (err) {
+    console.error("Create exam failed:", err);
+    showMsg("Failed to create exam: " + err.message, true);
+  }
 }
 
-function wireUI() {
-  // Sidebar navigation (Teacher)
-  document.getElementById("navMyClasses")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    document.getElementById("panelClasses")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
+/* =========================================================
+   Homework Creation
+   ========================================================= */
 
-  document.getElementById("navLiveSession")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    if (selected) {
-      document.getElementById("openBtn")?.click();
-    } else {
-      alert("Please select a class first.");
-      document.getElementById("panelClasses")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  });
+async function createHomework() {
+  const item = getSelectedOrAlert();
+  if (!item) return;
 
-  document.getElementById("navAttendance")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    document.getElementById("tabReports")?.click();
-    document.getElementById("reportsContainer")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
+  const title = document.getElementById("hwTitle")?.value.trim();
+  const due_date = document.getElementById("hwDueDate")?.value;
 
-  // Main UI Buttons
-  document.getElementById("clearBtn")?.addEventListener("click", () => {
-    document.getElementById("searchInput").value = "";
-    applySearch();
-  });
+  // Important fix: hwDesc may not exist in your HTML
+  const description = document.getElementById("hwDesc")?.value.trim() || "";
 
-  document.getElementById("searchInput")?.addEventListener("input", applySearch);
+  if (!title || !due_date) {
+    showMsg("Please fill homework title and due date.", true);
+    return;
+  }
 
-  document.getElementById("openBtn").addEventListener("click", () => {
-    if (!selected) return;
-    localStorage.setItem(ACTIVE_KEY, JSON.stringify(selected));
-    window.location.href = "class.html";
-  });
+  try {
+    const user = getCurrentUser();
 
-  // Logout buttons
-  ["logoutBtn", "headerLogoutBtn"].forEach(id => {
-    document.getElementById(id)?.addEventListener("click", (e) => {
-      e.preventDefault();
-      logout();
+    await fetchJSON(`${API}/homework`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        teacher_username: user.username,
+        class_id: item.class_id,
+        subject_id: item.subject_id,
+        title,
+        description,
+        due_date
+      })
     });
-  });
 
-  // Tab switching
-  const tabs = ["tabExam", "tabHomework", "tabGrading", "tabGradebook", "tabReports"];
-  const containers = ["examContainer", "homeworkContainer", "gradingContainer", "gradebookContainer", "reportsContainer"];
+    document.getElementById("hwTitle").value = "";
+    document.getElementById("hwDueDate").value = "";
 
-  tabs.forEach((tabId, idx) => {
-    document.getElementById(tabId)?.addEventListener("click", () => {
-      // Deactivate all tabs
-      tabs.forEach(t => document.getElementById(t)?.classList.remove("active-tab"));
-      // Hide all containers
-      containers.forEach(c => {
-        const el = document.getElementById(c);
-        if (el) el.style.display = "none";
-      });
-
-      // Activate current
-      document.getElementById(tabId).classList.add("active-tab");
-      const targetContainer = document.getElementById(containers[idx]);
-      if (targetContainer) targetContainer.style.display = "block";
-
-      // Clear academic message on tab switch
-      document.getElementById("academicMsg").textContent = "";
-      document.getElementById("academicMsg").className = "ok text-center mt-4";
-
-      // Load specific data
-      if (tabId === "tabGrading") loadGradingItems();
-      else if (tabId === "tabGradebook") loadGradebook();
-      else if (tabId === "tabReports") loadTeacherReports();
-      else loadAcademicData();
-    });
-  });
-
-  // Grading & Reports Actions
-  document.getElementById("gradeItemSelect")?.addEventListener("change", loadGradingList);
-  document.getElementById("saveGradesBtn")?.addEventListener("click", saveGrades);
-  document.getElementById("exportGradesBtn")?.addEventListener("click", exportToCSV);
-  document.getElementById("exportReportsBtn")?.addEventListener("click", exportReportToCSV);
-
-  // Creation logic
-  document.getElementById("createExamBtn")?.addEventListener("click", async () => {
-    if (!selected) {
-      alert("Please select a class first.");
-      return;
-    }
-    const title = document.getElementById("examTitle").value.trim();
-    const kind = document.getElementById("examKind").value;
-    const date = document.getElementById("examDate").value;
-    const msgEl = document.getElementById("academicMsg");
-
-    if (!title || !date) {
-      msgEl.textContent = "Please fill in all fields.";
-      msgEl.className = "tag tag-absent";
-      return;
-    }
-
-    try {
-      const user = getCurrentUser();
-      await fetchJSON(`${API}/exams`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          teacher_username: user.username,
-          class_id: selected.class_id,
-          subject_id: selected.subject_id,
-          title, kind, date
-        })
-      });
-      msgEl.textContent = "✅ Exam created successfully!";
-      msgEl.className = "tag tag-present";
-      document.getElementById("examTitle").value = "";
-      loadAcademicData();
-    } catch (err) {
-      msgEl.textContent = "Failed: " + err.message;
-      msgEl.className = "tag tag-absent";
-    }
-  });
-
-  document.getElementById("createHwBtn")?.addEventListener("click", async () => {
-    if (!selected) {
-      alert("Please select a class first.");
-      return;
-    }
-    const title = document.getElementById("hwTitle").value.trim();
-    const due_date = document.getElementById("hwDueDate").value;
-    const description = document.getElementById("hwDesc").value.trim();
-    const msgEl = document.getElementById("academicMsg");
-
-    if (!title || !due_date) {
-      msgEl.textContent = "Please fill in title and due date.";
-      msgEl.className = "tag tag-absent";
-      return;
-    }
-
-    try {
-      const user = getCurrentUser();
-      await fetchJSON(`${API}/homework`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          teacher_username: user.username,
-          class_id: selected.class_id,
-          subject_id: selected.subject_id,
-          title, due_date, description
-        })
-      });
-      msgEl.textContent = "✅ Homework posted successfully!";
-      msgEl.className = "tag tag-present";
-      document.getElementById("hwTitle").value = "";
+    if (document.getElementById("hwDesc")) {
       document.getElementById("hwDesc").value = "";
-      loadAcademicData();
-    } catch (err) {
-      msgEl.textContent = "Failed: " + err.message;
-      msgEl.className = "tag tag-absent";
     }
-  });
+
+    showMsg("✅ Homework posted successfully.");
+
+    await loadAcademicData();
+
+  } catch (err) {
+    console.error("Create homework failed:", err);
+    showMsg("Failed to create homework: " + err.message, true);
+  }
 }
+
+/* =========================================================
+   Grading
+   ========================================================= */
 
 async function loadGradingItems() {
+  const select = document.getElementById("gradeItemSelect");
+  const listEl = document.getElementById("gradingList");
+  const saveBtn = document.getElementById("saveGradesBtn");
+
+  if (!select) return;
+
   if (!selected) {
-    document.getElementById("gradeItemSelect").innerHTML = '<option value="">-- Select a class first --</option>';
+    select.innerHTML = '<option value="">-- Select a class first --</option>';
+    if (listEl) listEl.innerHTML = '<div style="padding: 1rem;">Select a class first.</div>';
+    if (saveBtn) saveBtn.style.display = "none";
     return;
   }
 
   try {
     const [exams, homework] = await Promise.all([
-      fetchJSON(`${API}/exams?class_id=${selected.class_id}&subject_id=${selected.subject_id}`),
-      fetchJSON(`${API}/homework?class_id=${selected.class_id}&subject_id=${selected.subject_id}`)
+      fetchJSON(`${API}/exams?class_id=${selected.class_id}&subject_id=${selected.subject_id}`).catch(() => []),
+      fetchJSON(`${API}/homework?class_id=${selected.class_id}&subject_id=${selected.subject_id}`).catch(() => [])
     ]);
 
-    const select = document.getElementById("gradeItemSelect");
     select.innerHTML = '<option value="">-- Choose Exam or Homework --</option>';
 
     exams.forEach(ex => {
@@ -344,18 +399,47 @@ async function loadGradingItems() {
       select.appendChild(opt);
     });
 
+    if (listEl) {
+      listEl.innerHTML = '<div style="padding: 1rem; text-align:center;">Choose an item to grade.</div>';
+    }
+
+    if (saveBtn) saveBtn.style.display = "none";
+
   } catch (err) {
-    console.error("Failed to load items for grading:", err);
+    console.error("Failed to load grading items:", err);
+    if (listEl) listEl.innerHTML = "Failed to load grading items.";
   }
 }
 
+async function getStudentsInSelectedClass() {
+  if (!selected) return [];
+
+  const classes = await fetchJSON(`${API}/classes`);
+  const currentClass = classes.find(c => sameId(c.id, selected.class_id));
+
+  if (!currentClass) return [];
+
+  const seating = currentClass.seating || {};
+  const students = Object.values(seating)
+    .map(v => {
+      if (typeof v === "string") return v;
+      if (v && typeof v === "object") return v.name || v.username || "";
+      return "";
+    })
+    .filter(Boolean);
+
+  return [...new Set(students)].sort();
+}
+
 async function loadGradingList() {
-  const val = document.getElementById("gradeItemSelect").value;
+  const val = document.getElementById("gradeItemSelect")?.value;
   const listEl = document.getElementById("gradingList");
   const saveBtn = document.getElementById("saveGradesBtn");
 
+  if (!listEl || !saveBtn) return;
+
   if (!val || !selected) {
-    listEl.innerHTML = '<div style="padding: 1rem; text-align: center; color: var(--text-secondary);">Select an item to grade.</div>';
+    listEl.innerHTML = '<div style="padding: 1rem; text-align: center;">Select an item to grade.</div>';
     saveBtn.style.display = "none";
     return;
   }
@@ -365,27 +449,26 @@ async function loadGradingList() {
   try {
     listEl.innerHTML = "Loading students...";
 
-    // 1. Get students from class seating
-    const classes = await fetchJSON(`${API}/classes`);
-    const currentClass = classes.find(c => c.id === selected.class_id);
-    const seating = currentClass ? (currentClass.seating || {}) : {};
-    const students = Object.values(seating);
+    const students = await getStudentsInSelectedClass();
 
     if (students.length === 0) {
-      listEl.innerHTML = '<div style="padding: 1rem; text-align: center;">No students found in this class seating chart.</div>';
+      listEl.innerHTML = `
+        <div style="padding: 1rem; text-align: center;">
+          No students found in this class seating chart. Add students to seats first.
+        </div>
+      `;
       saveBtn.style.display = "none";
       return;
     }
 
-    // 2. Get existing grades
-    const existingGrades = await fetchJSON(`${API}/grades?item_id=${id}&item_type=${type}`);
+    const existingGrades = await fetchJSON(`${API}/grades?item_id=${id}&item_type=${type}&class_id=${selected.class_id}`).catch(() => []);
 
     listEl.innerHTML = `
       <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
         <thead>
           <tr style="text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1);">
             <th style="padding: 0.5rem;">Student</th>
-            <th style="padding: 0.5rem; width: 80px;">Score</th>
+            <th style="padding: 0.5rem; width: 90px;">Score</th>
             <th style="padding: 0.5rem;">Comment</th>
           </tr>
         </thead>
@@ -394,21 +477,40 @@ async function loadGradingList() {
     `;
 
     const tbody = document.getElementById("gradingTableBody");
-    students.sort().forEach(name => {
-      const g = existingGrades.find(x => (x.student_name || "").toLowerCase() === (name || "").toLowerCase()) || {};
+
+    students.forEach(name => {
+      const g = existingGrades.find(x => normalize(x.student_name) === normalize(name)) || {};
+
       const tr = document.createElement("tr");
       tr.style.borderBottom = "1px solid rgba(255,255,255,0.05)";
+
       tr.innerHTML = `
         <td style="padding: 0.75rem;">${name}</td>
+
         <td style="padding: 0.75rem;">
-          <input type="number" class="grade-score" data-student="${name}" value="${g.score || ""}"
-                 style="margin-bottom:0; padding: 0.3rem; font-size: 0.8rem; width: 60px;">
+          <input
+            type="number"
+            min="0"
+            max="100"
+            class="grade-score input-field"
+            data-student="${name}"
+            value="${g.score || ""}"
+            style="margin-bottom:0; padding: 0.35rem; font-size: 0.8rem; width: 75px;"
+          >
         </td>
+
         <td style="padding: 0.75rem;">
-          <input type="text" class="grade-comment" data-student="${name}" value="${g.comment || ""}"
-                 style="margin-bottom:0; padding: 0.3rem; font-size: 0.8rem;" placeholder="Note...">
+          <input
+            type="text"
+            class="grade-comment input-field"
+            data-student="${name}"
+            value="${g.comment || ""}"
+            style="margin-bottom:0; padding: 0.35rem; font-size: 0.8rem;"
+            placeholder="Note..."
+          >
         </td>
       `;
+
       tbody.appendChild(tr);
     });
 
@@ -417,72 +519,99 @@ async function loadGradingList() {
   } catch (err) {
     console.error("Failed to load grading list:", err);
     listEl.innerHTML = "Error loading students.";
+    saveBtn.style.display = "none";
   }
 }
 
 async function saveGrades() {
-  const val = document.getElementById("gradeItemSelect").value;
-  if (!val || !selected) return;
+  const val = document.getElementById("gradeItemSelect")?.value;
+
+  if (!val || !selected) {
+    alert("Select a class and grading item first.");
+    return;
+  }
 
   const [type, id] = val.split("_");
+
   const scores = document.querySelectorAll(".grade-score");
   const comments = document.querySelectorAll(".grade-comment");
 
   const grades = [];
+
   scores.forEach((input, i) => {
     const student_name = input.dataset.student;
     const score = input.value;
-    const comment = comments[i].value;
+    const comment = comments[i]?.value || "";
+
     if (score !== "") {
-      grades.push({ student_name, score, comment });
+      grades.push({
+        student_name,
+        score,
+        comment
+      });
     }
   });
 
   const btn = document.getElementById("saveGradesBtn");
-  btn.disabled = true;
-  btn.textContent = "Saving...";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Saving...";
+  }
 
   try {
     await fetchJSON(`${API}/grades`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json"
+      },
       body: JSON.stringify({
         item_id: id,
         item_type: type,
         class_id: selected.class_id,
-        grades: grades
+        grades
       })
     });
-    const msgEl = document.getElementById("academicMsg");
-    msgEl.textContent = "✅ Grades saved successfully!";
-    msgEl.className = "tag tag-present";
+
+    showMsg("✅ Grades saved successfully.");
+
+    await loadGradebook();
+
   } catch (err) {
-    const msgEl = document.getElementById("academicMsg");
-    msgEl.textContent = "Failed: " + err.message;
-    msgEl.className = "tag tag-absent";
+    console.error("Save grades failed:", err);
+    showMsg("Failed to save grades: " + err.message, true);
+
   } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fa-solid fa-save"></i> Save All Grades';
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-save"></i> Save All Grades';
+    }
   }
 }
 
+/* =========================================================
+   Gradebook
+   ========================================================= */
+
 async function loadGradebook() {
   const viewEl = document.getElementById("gradebookView");
-  if (!selected) return;
+
+  if (!viewEl) return;
+
+  if (!selected) {
+    viewEl.innerHTML = '<div style="padding: 1rem;">Select a class first.</div>';
+    return;
+  }
 
   try {
     viewEl.innerHTML = "Loading full gradebook...";
 
-    const [exams, homework, allGrades, classes] = await Promise.all([
-      fetchJSON(`${API}/exams?class_id=${selected.class_id}&subject_id=${selected.subject_id}`),
-      fetchJSON(`${API}/homework?class_id=${selected.class_id}&subject_id=${selected.subject_id}`),
-      fetchJSON(`${API}/grades`),
-      fetchJSON(`${API}/classes`)
+    const [exams, homework, allGrades] = await Promise.all([
+      fetchJSON(`${API}/exams?class_id=${selected.class_id}&subject_id=${selected.subject_id}`).catch(() => []),
+      fetchJSON(`${API}/homework?class_id=${selected.class_id}&subject_id=${selected.subject_id}`).catch(() => []),
+      fetchJSON(`${API}/grades?class_id=${selected.class_id}`).catch(() => [])
     ]);
 
-    const currentClass = classes.find(c => c.id === selected.class_id);
-    const seating = currentClass ? (currentClass.seating || {}) : {};
-    const students = Object.values(seating).sort();
+    const students = await getStudentsInSelectedClass();
 
     if (students.length === 0) {
       viewEl.innerHTML = '<div style="padding: 1rem; text-align: center;">No students in seating chart.</div>';
@@ -490,37 +619,65 @@ async function loadGradebook() {
     }
 
     const items = [
-      ...exams.map(e => ({ ...e, type: 'exam' })),
-      ...homework.map(h => ({ ...h, type: 'homework' }))
+      ...exams.map(e => ({ ...e, type: "exam" })),
+      ...homework.map(h => ({ ...h, type: "homework" }))
     ];
 
-    let html = `<table style="width: 100%; border-collapse: collapse; font-size: 0.75rem;">
-      <thead>
-        <tr style="text-align: left; border-bottom: 2px solid rgba(255,255,255,0.1);">
-          <th style="padding: 0.5rem; min-width: 120px; position: sticky; left: 0; background: var(--card-bg);">Student</th>`;
+    if (items.length === 0) {
+      viewEl.innerHTML = '<div style="padding: 1rem; text-align: center;">No exams or homework created yet.</div>';
+      return;
+    }
+
+    let html = `
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.75rem;">
+        <thead>
+          <tr style="text-align: left; border-bottom: 2px solid rgba(255,255,255,0.1);">
+            <th style="padding: 0.5rem; min-width: 120px;">Student</th>
+    `;
 
     items.forEach(item => {
-      html += `<th style="padding: 0.5rem; text-align: center;">${item.title}<br/><span style="font-size: 0.6rem; opacity: 0.6;">${item.type}</span></th>`;
+      html += `
+        <th style="padding: 0.5rem; text-align: center;">
+          ${item.title}<br>
+          <span style="font-size: 0.6rem; opacity: 0.6;">${item.type}</span>
+        </th>
+      `;
     });
-    html += `</tr></thead><tbody>`;
+
+    html += `
+          </tr>
+        </thead>
+        <tbody>
+    `;
 
     students.forEach(name => {
-      html += `<tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-        <td style="padding: 0.5rem; font-weight: 600; position: sticky; left: 0; background: var(--card-bg);">${name}</td>`;
+      html += `
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="padding: 0.5rem; font-weight: 600;">${name}</td>
+      `;
 
       items.forEach(item => {
         const grade = allGrades.find(g =>
-          (g.student_name || "").toLowerCase() === (name || "").toLowerCase() &&
+          normalize(g.student_name) === normalize(name) &&
           g.item_type === item.type &&
-          String(g.item_id) === String(item.id)
+          sameId(g.item_id, item.id)
         );
+
         const score = grade && grade.score !== undefined ? grade.score : "-";
-        html += `<td style="padding: 0.5rem; text-align: center;">${score}</td>`;
+
+        html += `
+          <td style="padding: 0.5rem; text-align: center;">${score}</td>
+        `;
       });
+
       html += `</tr>`;
     });
 
-    html += `</tbody></table>`;
+    html += `
+        </tbody>
+      </table>
+    `;
+
     viewEl.innerHTML = html;
 
   } catch (err) {
@@ -529,41 +686,24 @@ async function loadGradebook() {
   }
 }
 
-function exportToCSV() {
-  const table = document.querySelector("#gradebookView table");
-  if (!table) {
-    alert("No data to export.");
-    return;
-  }
-
-  let csv = [];
-  const rows = table.querySelectorAll("tr");
-  for (const row of rows) {
-    const cols = row.querySelectorAll("th, td");
-    const data = [];
-    for (const col of cols) {
-      // Remove line breaks for CSV
-      data.push('"' + col.innerText.replace(/\n/g, " ") + '"');
-    }
-    csv.push(data.join(","));
-  }
-
-  const csvString = csv.join("\n");
-  const blob = new Blob([csvString], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `gradebook_${selected.class_name}_${selected.subject_name}.csv`;
-  a.click();
-}
+/* =========================================================
+   Reports
+   ========================================================= */
 
 async function loadTeacherReports() {
   const viewEl = document.getElementById("reportsView");
-  if (!selected) return;
+
+  if (!viewEl) return;
+
+  if (!selected) {
+    viewEl.innerHTML = '<div style="padding: 1rem;">Select a class first.</div>';
+    return;
+  }
 
   try {
     viewEl.innerHTML = "Loading reports...";
-    const stats = await fetchJSON(`${API}/reports/attendance?class_id=${selected.class_id}`);
+
+    const stats = await fetchJSON(`${API}/reports/attendance?class_id=${selected.class_id}`).catch(() => []);
 
     if (stats.length === 0) {
       viewEl.innerHTML = '<div style="padding: 1rem; text-align: center;">No attendance data found for this class.</div>';
@@ -572,7 +712,10 @@ async function loadTeacherReports() {
 
     let html = `
       <div style="margin-bottom: 1.5rem;">
-        <h4 style="font-size: 0.9rem; margin-bottom: 0.5rem;"><i class="fa-solid fa-chart-line"></i> Class Attendance Summary</h4>
+        <h4 style="font-size: 0.9rem; margin-bottom: 0.5rem;">
+          <i class="fa-solid fa-chart-line"></i> Class Attendance Summary
+        </h4>
+
         <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
           <thead>
             <tr style="text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1);">
@@ -587,7 +730,8 @@ async function loadTeacherReports() {
     `;
 
     stats.forEach(s => {
-      const color = s.percentage < 75 ? 'var(--accent-secondary)' : 'var(--accent-primary)';
+      const color = s.percentage < 75 ? "var(--accent-secondary)" : "var(--accent-primary)";
+
       html += `
         <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
           <td style="padding: 0.6rem;">${s.name}</td>
@@ -599,7 +743,12 @@ async function loadTeacherReports() {
       `;
     });
 
-    html += `</tbody></table></div>`;
+    html += `
+          </tbody>
+        </table>
+      </div>
+    `;
+
     viewEl.innerHTML = html;
 
   } catch (err) {
@@ -608,98 +757,251 @@ async function loadTeacherReports() {
   }
 }
 
-function exportReportToCSV() {
-  const table = document.querySelector("#reportsView table");
+/* =========================================================
+   Export
+   ========================================================= */
+
+function exportTableToCSV(tableSelector, filename) {
+  const table = document.querySelector(tableSelector);
+
   if (!table) {
     alert("No data to export.");
     return;
   }
 
-  let csv = [];
+  const csv = [];
   const rows = table.querySelectorAll("tr");
-  for (const row of rows) {
+
+  rows.forEach(row => {
     const cols = row.querySelectorAll("th, td");
     const data = [];
-    for (const col of cols) {
-      data.push('"' + col.innerText.replace(/\n/g, " ") + '"');
-    }
+
+    cols.forEach(col => {
+      data.push('"' + col.innerText.replace(/\n/g, " ").replace(/"/g, '""') + '"');
+    });
+
     csv.push(data.join(","));
-  }
+  });
 
   const csvString = csv.join("\n");
-  const blob = new Blob([csvString], { type: "text/csv" });
+  const blob = new Blob([csvString], {
+    type: "text/csv"
+  });
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
+
   a.href = url;
-  a.download = `report_${selected.class_name}_${selected.subject_name}.csv`;
+  a.download = filename;
   a.click();
+
+  URL.revokeObjectURL(url);
 }
 
-async function loadAcademicData() {
+function exportGradebookToCSV() {
   if (!selected) return;
-  const isHomework = document.getElementById("homeworkContainer").style.display === "block";
-  const msgEl = document.getElementById("academicMsg");
 
-  try {
-    const endpoint = isHomework ? "homework" : "exams";
-    const data = await fetchJSON(`${API}/${endpoint}?class_id=${selected.class_id}&subject_id=${selected.subject_id}`);
-
-    if (data.length > 0) {
-      msgEl.innerHTML = `<div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem;">
-        Existing ${endpoint}: ${data.length} found.
-      </div>`;
-    } else {
-      msgEl.textContent = `No ${endpoint} found for this class.`;
-    }
-  } catch (err) {
-    console.error("Failed to load academic data:", err);
-  }
+  exportTableToCSV(
+    "#gradebookView table",
+    `gradebook_${selected.class_name}_${selected.subject_name}.csv`
+  );
 }
+
+function exportReportToCSV() {
+  if (!selected) return;
+
+  exportTableToCSV(
+    "#reportsView table",
+    `report_${selected.class_name}_${selected.subject_name}.csv`
+  );
+}
+
+/* =========================================================
+   Teacher Stats
+   ========================================================= */
 
 async function loadTeacherStats() {
   try {
     const user = getCurrentUser();
+
+    if (!user) return;
+
     const [assignments, attendance, grades] = await Promise.all([
-      fetchJSON(`${API}/assignments`),
+      fetchJSON(`${API}/assignments`).catch(() => []),
       fetchJSON(`${API}/attendance/records`).catch(() => []),
       fetchJSON(`${API}/grades`).catch(() => [])
     ]);
 
-    const myAssignments = assignments.filter(a => a.teacher_username === user.username);
-    const myClassesCount = myAssignments.length;
+    const username = normalize(user.username);
 
-    // Attendance
-    const mySessions = attendance.filter(s => s.teacher_username === user.username);
+    const myAssignments = assignments.filter(a =>
+      normalize(a.teacher_username) === username
+    );
+
+    const myClassIds = new Set(myAssignments.map(a => String(a.class_id)));
+
+    const mySessions = attendance.filter(s =>
+      normalize(s.teacher_username) === username ||
+      myClassIds.has(String(s.class_id))
+    );
+
     let totalRecords = 0;
     let presentRecords = 0;
+
     mySessions.forEach(s => {
       (s.records || []).forEach(r => {
         totalRecords++;
-        if (r.status === "Present") presentRecords++;
+
+        if (r.status === "Present") {
+          presentRecords++;
+        }
       });
     });
-    const avgAttendance = totalRecords ? Math.round((presentRecords / totalRecords) * 100) : 0;
 
-    // Graded items (unique student+item_id pairs for this teacher's assignments)
-    // We can filter grades by looking at the assignments class_ids
-    const myClassIds = new Set(myAssignments.map(a => a.class_id));
-    const myGrades = grades.filter(g => myClassIds.has(Number(g.class_id)));
-    const gradedCount = myGrades.length;
+    const avgAttendance = totalRecords
+      ? Math.round((presentRecords / totalRecords) * 100)
+      : 0;
 
-    if (document.getElementById("statMyClasses")) document.getElementById("statMyClasses").textContent = myClassesCount;
-    if (document.getElementById("statMyAttendance")) document.getElementById("statMyAttendance").textContent = `${avgAttendance}%`;
-    if (document.getElementById("statMyGraded")) document.getElementById("statMyGraded").textContent = gradedCount;
+    const myGrades = grades.filter(g =>
+      myClassIds.has(String(g.class_id))
+    );
+
+    const statMyClasses = document.getElementById("statMyClasses");
+    const statMyAttendance = document.getElementById("statMyAttendance");
+    const statMyGraded = document.getElementById("statMyGraded");
+
+    if (statMyClasses) statMyClasses.textContent = myAssignments.length;
+    if (statMyAttendance) statMyAttendance.textContent = `${avgAttendance}%`;
+    if (statMyGraded) statMyGraded.textContent = myGrades.length;
 
   } catch (err) {
     console.error("Failed to load teacher stats:", err);
   }
 }
 
-(function init() {
-  wireUI();
-  loadTeacherStats();
-  loadTeacherAssignments().catch((err) => {
-    console.error(err);
-    document.getElementById("status").textContent = "Failed to load assignments: " + err.message;
+/* =========================================================
+   UI Wiring
+   ========================================================= */
+
+function showTab(tabId, containerId) {
+  const tabs = ["tabExam", "tabHomework", "tabGrading", "tabGradebook", "tabReports"];
+  const containers = ["examContainer", "homeworkContainer", "gradingContainer", "gradebookContainer", "reportsContainer"];
+
+  tabs.forEach(t => {
+    document.getElementById(t)?.classList.remove("active-tab");
+    document.getElementById(t)?.classList.remove("active");
   });
-})();
+
+  containers.forEach(c => {
+    const node = document.getElementById(c);
+    if (node) node.style.display = "none";
+  });
+
+  document.getElementById(tabId)?.classList.add("active-tab");
+  document.getElementById(tabId)?.classList.add("active");
+
+  const target = document.getElementById(containerId);
+  if (target) target.style.display = "block";
+
+  showMsg("");
+
+  if (tabId === "tabGrading") loadGradingItems();
+  if (tabId === "tabGradebook") loadGradebook();
+  if (tabId === "tabReports") loadTeacherReports();
+  if (tabId === "tabExam" || tabId === "tabHomework") loadAcademicData();
+}
+
+function wireUI() {
+  document.getElementById("navMyClasses")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    document.getElementById("panelClasses")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start"
+    });
+  });
+
+  document.getElementById("navLiveSession")?.addEventListener("click", (e) => {
+    e.preventDefault();
+
+    if (selected) {
+      document.getElementById("openBtn")?.click();
+    } else {
+      alert("Please select a class first.");
+      document.getElementById("panelClasses")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+    }
+  });
+
+  document.getElementById("navAttendance")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    showTab("tabReports", "reportsContainer");
+  });
+
+  document.getElementById("searchInput")?.addEventListener("input", applySearch);
+
+  document.getElementById("clearBtn")?.addEventListener("click", () => {
+    const input = document.getElementById("searchInput");
+    if (input) input.value = "";
+    applySearch();
+  });
+
+  document.getElementById("openBtn")?.addEventListener("click", () => {
+    if (!selected) return;
+
+    localStorage.setItem(ACTIVE_KEY, JSON.stringify(selected));
+    window.location.href = "class.html";
+  });
+
+  document.getElementById("tabExam")?.addEventListener("click", () => {
+    showTab("tabExam", "examContainer");
+  });
+
+  document.getElementById("tabHomework")?.addEventListener("click", () => {
+    showTab("tabHomework", "homeworkContainer");
+  });
+
+  document.getElementById("tabGrading")?.addEventListener("click", () => {
+    showTab("tabGrading", "gradingContainer");
+  });
+
+  document.getElementById("tabGradebook")?.addEventListener("click", () => {
+    showTab("tabGradebook", "gradebookContainer");
+  });
+
+  document.getElementById("tabReports")?.addEventListener("click", () => {
+    showTab("tabReports", "reportsContainer");
+  });
+
+  document.getElementById("createExamBtn")?.addEventListener("click", createExam);
+  document.getElementById("createHwBtn")?.addEventListener("click", createHomework);
+
+  document.getElementById("gradeItemSelect")?.addEventListener("change", loadGradingList);
+  document.getElementById("saveGradesBtn")?.addEventListener("click", saveGrades);
+
+  document.getElementById("exportGradesBtn")?.addEventListener("click", exportGradebookToCSV);
+  document.getElementById("exportReportsBtn")?.addEventListener("click", exportReportToCSV);
+
+  ["logoutBtn", "headerLogoutBtn"].forEach(id => {
+    document.getElementById(id)?.addEventListener("click", (e) => {
+      e.preventDefault();
+      logout();
+    });
+  });
+}
+
+/* =========================================================
+   Init
+   ========================================================= */
+
+document.addEventListener("DOMContentLoaded", async () => {
+  protectPage("teacher");
+
+  wireUI();
+
+  await Promise.all([
+    loadTeacherStats(),
+    loadTeacherAssignments()
+  ]);
+});

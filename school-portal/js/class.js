@@ -1,8 +1,10 @@
-// ---- Camera controller + Class Session Logic ----
+// class.js
 const CAM_URL_KEY = "esp32_cam_url";
 const CAM_MODE_KEY = "esp32_cam_mode";
 const CAM_FPS_KEY = "esp32_cam_fps";
 const ACTIVE_KEY = "active_assignment";
+
+const API = "/api";
 
 let camTimer = null;
 let camConnected = false;
@@ -10,10 +12,56 @@ let lastFrameAt = 0;
 let reconnectTimer = null;
 let sessionState = "IDLE";
 
-const API = "/api";
+let allStudents = [];
+let currentSaveCallback = null;
 
 function $(id) {
   return document.getElementById(id);
+}
+
+function normalize(v) {
+  return String(v || "").trim().toLowerCase();
+}
+
+function sameId(a, b) {
+  return String(a) === String(b);
+}
+
+function seatDisplayName(seatValue) {
+  if (!seatValue) return "Empty";
+
+  if (typeof seatValue === "object") {
+    return seatValue.name || seatValue.username || "Empty";
+  }
+
+  return seatValue || "Empty";
+}
+
+function seatUsername(seatValue) {
+  if (!seatValue) return "";
+
+  if (typeof seatValue === "object") {
+    return seatValue.username || "";
+  }
+
+  return "";
+}
+
+/* =========================================================
+   LOAD STUDENTS
+   ========================================================= */
+
+async function loadStudents() {
+  try {
+    const res = await fetch(`${API}/students`);
+    const data = await res.json();
+
+    allStudents = Array.isArray(data) ? data : [];
+
+  } catch (err) {
+    console.error("Failed to load students:", err);
+    allStudents = [];
+  }
 }
 
 /* =========================================================
@@ -28,6 +76,8 @@ async function loadSession() {
     return;
   }
 
+  await loadStudents();
+
   const assignment = JSON.parse(raw);
 
   $("sessionTitle").textContent = `${assignment.class_name} — ${assignment.subject_name}`;
@@ -37,9 +87,7 @@ async function loadSession() {
     const res = await fetch(`${API}/classes`);
     const classes = await res.json();
 
-    const currentClass = classes.find(c =>
-      String(c.id) === String(assignment.class_id)
-    );
+    const currentClass = classes.find(c => sameId(c.id, assignment.class_id));
 
     const seating = currentClass ? (currentClass.seating || {}) : {};
     const rows = currentClass?.rows || assignment.rows || 4;
@@ -55,8 +103,13 @@ async function loadSession() {
   updateSessionUI();
 }
 
+/* =========================================================
+   SEATING GRID
+   ========================================================= */
+
 function renderGrid(rows, cols, seating, classId) {
   const grid = $("seatGrid");
+
   grid.innerHTML = "";
   grid.style.display = "grid";
   grid.style.gridTemplateColumns = `60px repeat(${cols}, 1fr)`;
@@ -82,10 +135,13 @@ function renderGrid(rows, cols, seating, classId) {
       seat.className = "seat";
 
       const key = `${r}_${c}`;
-      const studentName = seating[key] || "Empty";
+      const seatValue = seating[key];
+
+      const studentName = seatDisplayName(seatValue);
+      const studentUser = seatUsername(seatValue);
       const seatLabel = `${String.fromCharCode(65 + r)}${c + 1}`;
 
-      if (seating[key]) {
+      if (studentName !== "Empty") {
         seat.classList.add("occupied");
       }
 
@@ -97,18 +153,15 @@ function renderGrid(rows, cols, seating, classId) {
       seat.onclick = () => {
         openSeatModal(
           seatLabel,
-          studentName === "Empty" ? "" : studentName,
-          async (newName) => {
-            await saveSeat(classId, r, c, newName);
-
-            const finalName = newName.trim() || "Empty";
-            seat.querySelector("small").textContent = finalName;
-
-            if (finalName !== "Empty") {
-              seat.classList.add("occupied");
-            } else {
-              seat.classList.remove("occupied");
-            }
+          studentUser,
+          async (selectedStudent) => {
+            await saveSeat(
+              classId,
+              r,
+              c,
+              selectedStudent.name,
+              selectedStudent.username
+            );
 
             await loadSession();
           }
@@ -122,16 +175,20 @@ function renderGrid(rows, cols, seating, classId) {
   renderAttendance(seating);
 }
 
+/* =========================================================
+   ATTENDANCE TABLE
+   ========================================================= */
+
 function renderAttendance(seating) {
   const body = $("attendanceBody");
   body.innerHTML = "";
 
-  const entries = Object.entries(seating);
+  const entries = Object.entries(seating || {});
 
   if (entries.length === 0) {
     body.innerHTML = `
       <tr>
-        <td colspan="5" style="padding: 2rem; text-align: center; color: var(--text-secondary);">
+        
           No students assigned to seats yet.
         </td>
       </tr>
@@ -147,9 +204,14 @@ function renderAttendance(seating) {
     return c1 - c2;
   });
 
-  entries.forEach(([key, name]) => {
+  entries.forEach(([key, seatValue]) => {
     const [r, c] = key.split("_").map(Number);
     const seatLabel = `${String.fromCharCode(65 + r)}${c + 1}`;
+
+    const displayName = seatDisplayName(seatValue);
+    const username = seatUsername(seatValue);
+
+    if (!displayName || displayName === "Empty") return;
 
     const tr = document.createElement("tr");
 
@@ -158,7 +220,9 @@ function renderAttendance(seating) {
         <strong style="color: var(--accent-primary);">${seatLabel}</strong>
       </td>
 
-      <td style="padding: 0.75rem;">${name}</td>
+      <td style="padding: 0.75rem;" data-username="${username}">
+        ${displayName}
+      </td>
 
       <td style="padding: 0.75rem;" class="accuracy-cell">
         <span style="color: var(--text-secondary); opacity: 0.5;">—</span>
@@ -182,7 +246,7 @@ function renderAttendance(seating) {
 }
 
 /* =========================================================
-   ATTENDANCE STATUS
+   ATTENDANCE STATUS CONTROLS
    ========================================================= */
 
 function toggleStatus(btn) {
@@ -232,7 +296,6 @@ async function saveAttendance() {
   if (!raw) return;
 
   const assignment = JSON.parse(raw);
-
   const rows = $("attendanceBody").querySelectorAll("tr");
 
   if (rows.length === 0 || rows[0].innerText.includes("No students")) {
@@ -249,10 +312,13 @@ async function saveAttendance() {
 
     const seat = cells[0].textContent.trim();
     const name = cells[1].textContent.trim();
+    const username = cells[1].dataset.username || "";
 
-    // IMPORTANT FIX:
-    // cells[2] = Accuracy column
-    // cells[3] = Status column
+    // columns:
+    // 0 = seat
+    // 1 = student
+    // 2 = accuracy
+    // 3 = status
     const tag = cells[3].querySelector(".tag");
 
     if (!tag) return;
@@ -262,6 +328,7 @@ async function saveAttendance() {
     records.push({
       seat,
       name,
+      username,
       status
     });
   });
@@ -282,8 +349,8 @@ async function saveAttendance() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        class_id: assignment.class_id,
-        subject_id: assignment.subject_id,
+        class_id: Number(assignment.class_id),
+        subject_id: Number(assignment.subject_id),
         teacher_username: assignment.teacher_username || getCurrentUser()?.username || "teacher",
         date: new Date().toISOString().split("T")[0],
         records
@@ -302,6 +369,7 @@ async function saveAttendance() {
   } catch (err) {
     console.error("Save error:", err);
     alert("Connection error while saving attendance: " + err.message);
+
   } finally {
     btn.disabled = false;
     btn.innerHTML = '<i class="fa-solid fa-save"></i> Save Record';
@@ -309,7 +377,7 @@ async function saveAttendance() {
 }
 
 /* =========================================================
-   LOAD HISTORY
+   HISTORY
    ========================================================= */
 
 async function loadHistory() {
@@ -326,7 +394,7 @@ async function loadHistory() {
     const allRecords = await res.json();
 
     const classRecords = allRecords
-      .filter(r => String(r.class_id) === String(assignment.class_id))
+      .filter(r => sameId(r.class_id, assignment.class_id))
       .reverse();
 
     if (classRecords.length === 0) {
@@ -350,6 +418,7 @@ async function loadHistory() {
               ${presentCount} / ${totalCount} Present
             </span>
           </div>
+
           <div style="font-size: 0.7rem; color: var(--text-secondary); margin-top: 0.25rem;">
             Saved at ${rec.timestamp || "N/A"}
           </div>
@@ -359,6 +428,7 @@ async function loadHistory() {
 
   } catch (err) {
     console.error("History error:", err);
+
     historyList.innerHTML = `
       <div style="color: #f87171; padding: 1rem;">
         Failed to load history.
@@ -368,7 +438,7 @@ async function loadHistory() {
 }
 
 /* =========================================================
-   PUBLIC DEMO AI RESULT LOADER
+   AI RESULT LOADER FOR PUBLIC DEMO
    ========================================================= */
 
 async function runVideoAttendance() {
@@ -396,7 +466,9 @@ async function runVideoAttendance() {
 
       if (cells.length < 4) return;
 
-      const studentName = cells[1].textContent.trim().toLowerCase();
+      const studentName = normalize(cells[1].textContent);
+      const studentUsername = normalize(cells[1].dataset.username);
+
       const accuracyCell = tr.querySelector(".accuracy-cell");
       const statusTag = cells[3].querySelector(".tag");
       const actionBtn = tr.querySelector("button");
@@ -404,7 +476,8 @@ async function runVideoAttendance() {
       if (!studentName || !accuracyCell || !statusTag) return;
 
       const aiRecord = aiResults.find(r =>
-        (r.name || "").trim().toLowerCase() === studentName
+        normalize(r.name) === studentName ||
+        normalize(r.username) === studentUsername
       );
 
       if (aiRecord && (aiRecord.present === "YES" || aiRecord.status === "Present")) {
@@ -476,6 +549,7 @@ async function runVideoAttendance() {
   } catch (e) {
     console.error("AI Result Error:", e);
     alert("AI Error: " + e.message);
+
   } finally {
     btn.disabled = false;
     btn.innerHTML = '<i class="fa-solid fa-robot"></i> Load AI Attendance Result';
@@ -486,19 +560,51 @@ async function runVideoAttendance() {
    SEAT MODAL
    ========================================================= */
 
-let currentSaveCallback = null;
-
-function openSeatModal(label, currentName, onSave) {
+function openSeatModal(label, currentUsername, onSave) {
   const modal = $("seatModal");
   const labelSpan = $("modalSeatLabel");
-  const input = $("modalStudentName");
+  const select = $("modalStudentSelect");
 
   labelSpan.textContent = label;
-  input.value = currentName;
-  currentSaveCallback = onSave;
+
+  select.innerHTML = '<option value="">-- Empty Seat --</option>';
+
+  allStudents.forEach(student => {
+    const opt = document.createElement("option");
+    opt.value = student.username;
+    opt.textContent = `${student.name || student.username} (${student.username})`;
+    select.appendChild(opt);
+  });
+
+  select.value = currentUsername || "";
+
+  currentSaveCallback = async () => {
+    const username = select.value;
+
+    if (!username) {
+      await onSave({
+        name: "",
+        username: ""
+      });
+
+      return;
+    }
+
+    const student = allStudents.find(s => s.username === username);
+
+    if (!student) {
+      alert("Selected student not found.");
+      return;
+    }
+
+    await onSave({
+      name: student.name || student.username,
+      username: student.username
+    });
+  };
 
   modal.style.display = "flex";
-  input.focus();
+  select.focus();
 }
 
 function closeSeatModal() {
@@ -509,14 +615,12 @@ function closeSeatModal() {
 function wireSeatModal() {
   const saveBtn = $("modalSaveBtn");
   const cancelBtn = $("modalCancelBtn");
-  const input = $("modalStudentName");
 
   if (!saveBtn || saveBtn.dataset.wired) return;
 
   saveBtn.addEventListener("click", async () => {
     if (currentSaveCallback) {
-      const name = input.value.trim();
-      await currentSaveCallback(name);
+      await currentSaveCallback();
     }
 
     closeSeatModal();
@@ -524,26 +628,21 @@ function wireSeatModal() {
 
   cancelBtn.addEventListener("click", closeSeatModal);
 
-  input.addEventListener("keyup", (e) => {
-    if (e.key === "Enter") {
-      saveBtn.click();
-    }
-  });
-
   saveBtn.dataset.wired = "true";
 }
 
-async function saveSeat(classId, row, col, name) {
+async function saveSeat(classId, row, col, name, username) {
   const res = await fetch(`${API}/classes/seat`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      class_id: classId,
-      row,
-      col,
-      name
+      class_id: Number(classId),
+      row: Number(row),
+      col: Number(col),
+      name,
+      username
     })
   });
 
@@ -790,6 +889,7 @@ function doConnect(isAuto = false) {
     if (!isAuto) {
       setStatus("Status: enter a camera URL first", false);
     }
+
     return;
   }
 
@@ -825,7 +925,9 @@ function wireCameraUI() {
   $("disconnectBtn").addEventListener("click", disconnectCamera);
 
   $("camMode").addEventListener("change", () => {
-    if ($("camUrl").value.trim()) doConnect(false);
+    if ($("camUrl").value.trim()) {
+      doConnect(false);
+    }
   });
 
   $("camFps").addEventListener("change", () => {
@@ -880,11 +982,11 @@ function wireCameraUI() {
    INIT
    ========================================================= */
 
-(function init() {
+document.addEventListener("DOMContentLoaded", () => {
   loadSession();
   wireSeatModal();
   wireSessionUI();
   wireCameraUI();
 
   $("saveAttendanceBtn").addEventListener("click", saveAttendance);
-})();
+});

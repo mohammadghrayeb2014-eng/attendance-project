@@ -97,7 +97,7 @@
               style="padding: 0.5rem 0.8rem; font-size: 0.75rem; color: #f87171; border-color: rgba(248, 113, 113, 0.3);"
               onclick="markAll('Absent')"><i class="fa-solid fa-xmark"></i> All Absent</button>
             <button id="runAiBtn" class="btn btn-primary" style="padding: 0.5rem 1rem; font-size: 0.8rem;"
-              onclick="runVideoAttendance()"><i class="fa-solid fa-robot"></i> Run AI Attendance</button>
+              onclick="runVideoAttendance()"><i class="fa-solid fa-robot"></i> Load Ai Attendance Result</button>
             <button id="saveAttendanceBtn" class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.8rem;"><i
                 class="fa-solid fa-save"></i> Save Record</button>
           </div>
@@ -117,8 +117,9 @@
             <tbody id="attendanceBody">
               <!-- Populated by JS -->
               <tr>
-                <td colspan="4" style="padding: 2rem; text-align: center; color: var(--text-secondary);">No students
-                  assigned to seats yet.</td>
+                <td colspan="5" style="padding: 2rem; text-align: center; color: var(--text-secondary);">
+  No students assigned to seats yet.
+</td>
               </tr>
             </tbody>
           </table>
@@ -198,19 +199,20 @@
   </main>
 
   <!-- Edit Seat Modal -->
-  <div id="seatModal" class="modal-overlay" style="display: none;">
-    <div class="modal card" style="min-width: 300px; margin-top: 0;">
-      <h3>Edit Seat <span id="modalSeatLabel"></span></h3>
-      <div class="input-group">
-        <label>Student Name</label>
-        <input id="modalStudentName" class="input-field" placeholder="Enter name..." autofocus>
-      </div>
-      <div class="flex gap-4" style="justify-content: flex-end;">
-        <button id="modalCancelBtn" class="btn btn-outline">Cancel</button>
-        <button id="modalSaveBtn" class="btn btn-primary">Save</button>
-      </div>
+<div id="seatModal" class="modal-overlay" style="display: none;">
+  <div class="modal card" style="min-width: 300px; margin-top: 0;">
+    <h3>Edit Seat <span id="modalSeatLabel"></span></h3>
+
+    <div class="input-group">
+      <label>Choose Student</label>
+      <select id="modalStudentSelect" class="input-field">
+        <option value="">-- Empty Seat --</option>
+      </select>
+    </div>
+
+    <div class="flex gap-4" style="justify-content: flex-end;">
+      <button id="modalCancelBtn" class="btn btn-outline">Cancel</button>
+      <button id="modalSaveBtn" class="btn btn-primary">Save</button>
     </div>
   </div>
-</body>
-
-</html>
+</div>
