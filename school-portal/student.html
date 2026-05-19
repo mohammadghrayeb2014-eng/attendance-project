@@ -2,132 +2,287 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Student Dashboard - School Portal</title>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap"
-        rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script defer src="js/auth.js"></script>
-    <script defer src="js/student.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Student Portal | School Portal</title>
+
+  <!-- Fonts -->
+  <link
+    href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet">
+
+  <!-- Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/style.css">
+
+  <!-- Scripts -->
+  <script defer src="js/auth.js"></script>
+  <script defer src="js/student.js"></script>
 </head>
 
 <body class="dashboard-layout">
-    <!-- Mobile Topbar -->
-    <div class="mobile-topbar">
-        <div class="sidebar-logo" style="margin-bottom: 0;">
-            <div class="logo-shield" style="width: 2rem; height: 2rem; font-size: 1rem; border-radius: 0.5rem;">
-                <i class="fa-solid fa-graduation-cap"></i>
-            </div>
-            <span class="gradient-text">Student</span>
-        </div>
-        <button class="hamburger" id="hamburgerBtn">
-            <span></span>
-            <span></span>
-            <span></span>
-        </button>
+  <!-- Mobile Topbar -->
+  <div class="mobile-topbar">
+    <div class="sidebar-logo" style="margin-bottom: 0;">
+      <div class="logo-shield" style="width: 2rem; height: 2rem; font-size: 1rem; border-radius: 0.5rem;">
+        <i class="fa-solid fa-graduation-cap"></i>
+      </div>
+      <span class="gradient-text">Student</span>
     </div>
 
-    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    <button class="hamburger" id="hamburgerBtn">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+  </div>
 
-    <div class="bg-blob-container">
-        <div class="blob blob-1"></div>
-        <div class="blob blob-2"></div>
-        <div class="blob blob-3"></div>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <!-- Background -->
+  <div class="bg-blob-container">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+  </div>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-shield" style="width: 2.5rem; height: 2.5rem; font-size: 1.25rem; border-radius: 0.75rem;">
+        <i class="fa-solid fa-graduation-cap"></i>
+      </div>
+      <span class="gradient-text">Student</span>
     </div>
 
-    <aside class="sidebar">
-        <div class="sidebar-logo">
-            <div class="logo-shield" style="width: 2.5rem; height: 2.5rem; font-size: 1.25rem; border-radius: 0.75rem;">
-                <i class="fa-solid fa-graduation-cap"></i>
-            </div>
-            <span class="gradient-text">My Portal</span>
+    <nav class="nav-links">
+      <a href="#" class="nav-link active" id="navOverview">
+        <i class="fa-solid fa-house"></i> Overview
+      </a>
+
+      <a href="#gradesSection" class="nav-link" id="navGrades">
+        <i class="fa-solid fa-chart-column"></i> Grades
+      </a>
+
+      <a href="#attendanceSection" class="nav-link" id="navAttendance">
+        <i class="fa-solid fa-clipboard-check"></i> Attendance
+      </a>
+
+      <a href="#homeworkSection" class="nav-link" id="navHomework">
+        <i class="fa-solid fa-book"></i> Homework
+      </a>
+
+      <a href="#agendaSection" class="nav-link" id="navAgenda">
+        <i class="fa-solid fa-calendar-days"></i> Agenda
+      </a>
+
+      <div style="margin-top: auto;">
+        <a href="#" id="logoutBtn" class="nav-link" style="color: #ef4444;">
+          <i class="fa-solid fa-power-off"></i> Sign Out
+        </a>
+      </div>
+    </nav>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <!-- Header -->
+    <header class="header"
+      style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3rem;">
+      <div>
+        <h1 class="gradient-text" style="font-size: 2.25rem; margin-bottom: 0.25rem;">
+          Student Dashboard
+        </h1>
+        <p class="text-muted">
+          Welcome back, <span id="userName">Student</span>
+        </p>
+      </div>
+
+      <div class="user-profile" style="display: flex; align-items: center; gap: 1.25rem;">
+        <div id="userAvatar" class="avatar"
+          style="background: linear-gradient(135deg, var(--p-600), var(--p-400)); width: 3.25rem; height: 3.25rem; color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; border-radius: 1rem; box-shadow: 0 8px 16px rgba(37, 99, 235, 0.2);">
+          S
         </div>
-        <nav class="nav-links">
-            <a href="#" class="nav-link active"><i class="fa-solid fa-gauge-high"></i> Dashboard</a>
-            <a href="#" class="nav-link"><i class="fa-solid fa-chart-line"></i> Performance</a>
-            <a href="#" class="nav-link"><i class="fa-solid fa-calendar-check"></i> Attendance</a>
-            <div style="margin-top: auto;">
-                <a href="#" id="logoutBtn" class="nav-link" style="color: #ef4444;"><i class="fa-solid fa-power-off"></i> Exit</a>
-            </div>
-        </nav>
-    </aside>
+      </div>
+    </header>
 
-    <main class="main-content">
-        <header class="header">
-            <div>
-                <h1 class="gradient-text" style="font-size: 2.25rem; margin-bottom: 0.5rem;">Student Dashboard</h1>
-                <p class="text-muted" id="userName">Verifying student credentials...</p>
-            </div>
-            <div class="user-profile">
-                <div class="avatar" id="userAvatar" style="background: var(--p-600); width: 3rem; height: 3rem;">S</div>
-            </div>
-        </header>
-
-        <div style="display: grid; grid-template-columns: 3fr 2fr; gap: 2rem; margin-top: 1rem;" class="mobile-stack">
-            <!-- Left: Performance -->
-            <div style="display: flex; flex-direction: column; gap: 2rem;">
-                <div class="card">
-                    <h3><i class="fa-solid fa-chart-line gradient-text"></i> My Performance</h3>
-                    <div style="height: 300px; padding: 1rem 0;">
-                        <canvas id="studentPerformanceChart"></canvas>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <h3><i class="fa-solid fa-ranking-star gradient-text"></i> Grade History</h3>
-                    <div id="gradesList" class="stagger-in">
-                        <div class="text-center text-muted" style="padding: 3rem;">Loading records...</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right: Attendance -->
-            <div style="display: flex; flex-direction: column; gap: 2rem;">
-                <div class="card">
-                    <h3><i class="fa-solid fa-calendar-check gradient-text"></i> My Attendance</h3>
-                    <p class="text-muted" style="margin-bottom: 1.5rem;">View your daily attendance here.</p>
-                    <div id="attendanceList" class="stagger-in">
-                        <div class="text-center text-muted" style="padding: 2rem;">Retrieving logs...</div>
-                    </div>
-                </div>
-
-                <div class="card" style="background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: white;">
-                    <h3 style="color: white;"><i class="fa-solid fa-shield-halved"></i> Security</h3>
-                    <p style="font-size: 0.875rem; opacity: 0.9; line-height: 1.6;">
-                        Your session is secure. All grades and records are encrypted and protected via MongoDB.
-                    </p>
-                </div>
-            </div>
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon">
+          <i class="fa-solid fa-chart-line"></i>
         </div>
-    </main>
+        <div class="stat-info">
+          <span class="stat-label">Academic Progress</span>
+          <span class="stat-value">Live</span>
+        </div>
+      </div>
 
-    <script>
-        document.addEventListener("DOMContentLoaded", () => {
-            protectPage("student");
-            const logoutBtn = document.getElementById("logoutBtn");
-            if (logoutBtn) logoutBtn.addEventListener("click", (e) => { e.preventDefault(); logout(); });
+      <div class="stat-card">
+        <div class="stat-icon">
+          <i class="fa-solid fa-clipboard-user"></i>
+        </div>
+        <div class="stat-info">
+          <span class="stat-label">Attendance</span>
+          <span class="stat-value">Tracked</span>
+        </div>
+      </div>
 
-            // Mobile Menu Logic
-            const hamberBtn = document.getElementById("hamburgerBtn");
-            const sidebar = document.querySelector(".sidebar");
-            const overlay = document.getElementById("sidebarOverlay");
+      <div class="stat-card">
+        <div class="stat-icon">
+          <i class="fa-solid fa-book-open"></i>
+        </div>
+        <div class="stat-info">
+          <span class="stat-label">Homework</span>
+          <span class="stat-value">Updated</span>
+        </div>
+      </div>
+    </div>
 
-            const toggleMenu = () => {
-                hamberBtn.classList.toggle("active");
-                sidebar.classList.toggle("open");
-                overlay.classList.toggle("open");
-            };
+    <!-- Main Grid -->
+    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 2rem;" class="mobile-stack">
 
-            if (hamberBtn) {
-                hamberBtn.addEventListener("click", toggleMenu);
-                overlay.addEventListener("click", toggleMenu);
-            }
+      <!-- Left Column -->
+      <div style="display: flex; flex-direction: column; gap: 2rem;">
+
+        <!-- Performance Chart -->
+        <div class="card" id="performanceSection">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h3 style="margin: 0;">
+              <i class="fa-solid fa-chart-column gradient-text"></i> My Performance
+            </h3>
+            <span class="tag tag-present">Grades Overview</span>
+          </div>
+
+          <div style="height: 300px;">
+            <canvas id="studentPerformanceChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Grades -->
+        <div class="card" id="gradesSection">
+          <h3>
+            <i class="fa-solid fa-star gradient-text"></i> My Grades
+          </h3>
+
+          <div id="gradesList">
+            <div class="text-center text-muted" style="padding: 2rem;">
+              Grades will appear here.
+            </div>
+          </div>
+        </div>
+
+        <!-- Homework -->
+        <div class="card" id="homeworkSection">
+          <h3>
+            <i class="fa-solid fa-book gradient-text"></i> My Homework
+          </h3>
+
+          <div id="homeworkList">
+            <div class="text-center text-muted" style="padding: 2rem;">
+              Homework will appear here.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column -->
+      <div style="display: flex; flex-direction: column; gap: 2rem;">
+
+        <!-- Agenda -->
+        <div class="card" id="agendaSection">
+          <h3>
+            <i class="fa-solid fa-calendar-days gradient-text"></i> My Agenda
+          </h3>
+
+          <div id="agendaList">
+            <div class="text-center text-muted" style="padding: 2rem;">
+              Agenda will appear here.
+            </div>
+          </div>
+        </div>
+
+        <!-- Attendance -->
+        <div class="card" id="attendanceSection">
+          <h3>
+            <i class="fa-solid fa-clipboard-check gradient-text"></i> My Attendance
+          </h3>
+
+          <div id="attendanceList">
+            <div class="text-center text-muted" style="padding: 2rem;">
+              Attendance records will appear here.
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      protectPage("student");
+
+      const hamburgerBtn = document.getElementById("hamburgerBtn");
+      const sidebar = document.querySelector(".sidebar");
+      const overlay = document.getElementById("sidebarOverlay");
+
+      function openMenu() {
+        if (!hamburgerBtn || !sidebar || !overlay) return;
+
+        hamburgerBtn.classList.add("active");
+        sidebar.classList.add("open");
+        overlay.classList.add("open");
+        document.body.classList.add("menu-open");
+      }
+
+      function closeMenu() {
+        if (!hamburgerBtn || !sidebar || !overlay) return;
+
+        hamburgerBtn.classList.remove("active");
+        sidebar.classList.remove("open");
+        overlay.classList.remove("open");
+        document.body.classList.remove("menu-open");
+      }
+
+      function toggleMenu() {
+        if (!sidebar) return;
+
+        if (sidebar.classList.contains("open")) {
+          closeMenu();
+        } else {
+          openMenu();
+        }
+      }
+
+      if (hamburgerBtn) {
+        hamburgerBtn.addEventListener("click", toggleMenu);
+      }
+
+      if (overlay) {
+        overlay.addEventListener("click", closeMenu);
+      }
+
+      document.querySelectorAll(".sidebar .nav-link").forEach(link => {
+        link.addEventListener("click", () => {
+          if (window.innerWidth <= 768) {
+            closeMenu();
+          }
         });
-    </script>
+      });
+
+      window.addEventListener("resize", () => {
+        if (window.innerWidth > 768) {
+          closeMenu();
+        }
+      });
+    });
+  </script>
 </body>
 
 </html>

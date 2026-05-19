@@ -1,3 +1,4 @@
+// student.js
 const API = "/api";
 
 let studentChart = null;
@@ -34,27 +35,91 @@ function sameId(a, b) {
   return String(a) === String(b);
 }
 
-function safeDate(session) {
-  const raw = session.timestamp || session.date;
-
-  if (!raw) return "Unknown date";
-
-  const d = new Date(raw);
-
-  if (Number.isNaN(d.getTime())) {
-    return String(raw).split(" ")[0];
-  }
-
-  return d.toLocaleDateString();
-}
-
 function setText(id, text) {
   const node = document.getElementById(id);
   if (node) node.textContent = text;
 }
 
+function safeDate(value) {
+  if (!value) return "No date";
+
+  const d = new Date(value);
+
+  if (Number.isNaN(d.getTime())) {
+    return String(value).split(" ")[0];
+  }
+
+  return d.toLocaleDateString();
+}
+
+function setLoading() {
+  const ids = ["gradesList", "attendanceList", "homeworkList", "agendaList"];
+
+  ids.forEach(id => {
+    const node = document.getElementById(id);
+
+    if (node) {
+      node.innerHTML = `
+        <div class="text-center text-muted" style="padding: 2rem;">
+          Loading...
+        </div>
+      `;
+    }
+  });
+}
+
+function showStudentError(message) {
+  const ids = ["gradesList", "attendanceList", "homeworkList", "agendaList"];
+
+  ids.forEach(id => {
+    const node = document.getElementById(id);
+
+    if (node) {
+      node.innerHTML = `
+        <div class="tag tag-absent" style="margin: 1rem;">
+          Failed to load data: ${message}
+        </div>
+      `;
+    }
+  });
+}
+
 /* =========================================================
-   Load Student Dashboard
+   Find which classes the student belongs to
+   ========================================================= */
+
+function getStudentClassIds(classes, studentName, studentUser) {
+  const ids = new Set();
+
+  classes.forEach(c => {
+    const seating = c.seating || {};
+
+    Object.values(seating).forEach(seat => {
+      let seatName = "";
+      let seatUsername = "";
+
+      if (typeof seat === "object" && seat !== null) {
+        seatName = normalize(seat.name);
+        seatUsername = normalize(seat.username);
+      } else {
+        seatName = normalize(seat);
+      }
+
+      if (
+        seatName === studentName ||
+        seatName === studentUser ||
+        seatUsername === studentUser
+      ) {
+        ids.add(String(c.id));
+      }
+    });
+  });
+
+  return ids;
+}
+
+/* =========================================================
+   Main Load
    ========================================================= */
 
 async function loadStudentData() {
@@ -74,24 +139,16 @@ async function loadStudentData() {
     avatar.textContent = displayName[0]?.toUpperCase() || "S";
   }
 
-  const gradeListEl = document.getElementById("gradesList");
-  const attListEl = document.getElementById("attendanceList");
-
-  if (gradeListEl) {
-    gradeListEl.innerHTML = '<div class="text-center text-muted" style="padding: 2rem;">Loading grades...</div>';
-  }
-
-  if (attListEl) {
-    attListEl.innerHTML = '<div class="text-center text-muted" style="padding: 2rem;">Loading attendance...</div>';
-  }
+  setLoading();
 
   try {
-    const [allGrades, exams, homework, attendance, subjects] = await Promise.all([
+    const [allGrades, exams, homework, attendance, subjects, classes] = await Promise.all([
       fetchJSON(`${API}/grades`).catch(() => []),
       fetchJSON(`${API}/exams`).catch(() => []),
       fetchJSON(`${API}/homework`).catch(() => []),
       fetchJSON(`${API}/attendance/records`).catch(() => []),
-      fetchJSON(`${API}/subjects`).catch(() => [])
+      fetchJSON(`${API}/subjects`).catch(() => []),
+      fetchJSON(`${API}/classes`).catch(() => [])
     ]);
 
     const subjectMap = new Map(
@@ -101,33 +158,30 @@ async function loadStudentData() {
     const studentName = normalize(user.name);
     const studentUser = normalize(user.username);
 
+    const myClassIds = getStudentClassIds(classes, studentName, studentUser);
+
     const myGrades = allGrades.filter(g => {
       const gradeStudent = normalize(g.student_name);
 
       return gradeStudent === studentName || gradeStudent === studentUser;
     });
 
+    const myHomework = homework.filter(hw =>
+      myClassIds.has(String(hw.class_id))
+    );
+
+    const myExams = exams.filter(ex =>
+      myClassIds.has(String(ex.class_id))
+    );
+
     renderGrades(myGrades, exams, homework, subjectMap);
     renderAttendance(attendance, studentName, studentUser);
+    renderHomework(myHomework, subjectMap);
+    renderAgenda(myExams, myHomework, subjectMap);
 
   } catch (err) {
     console.error("Failed to load student dashboard:", err);
-
-    if (gradeListEl) {
-      gradeListEl.innerHTML = `
-        <div class="tag tag-absent" style="margin: 1rem;">
-          Failed to load student data: ${err.message}
-        </div>
-      `;
-    }
-
-    if (attListEl) {
-      attListEl.innerHTML = `
-        <div class="tag tag-absent" style="margin: 1rem;">
-          Failed to load attendance records.
-        </div>
-      `;
-    }
+    showStudentError(err.message);
   }
 }
 
@@ -137,7 +191,6 @@ async function loadStudentData() {
 
 function renderGrades(myGrades, exams, homework, subjectMap) {
   const gradeListEl = document.getElementById("gradesList");
-
   if (!gradeListEl) return;
 
   gradeListEl.innerHTML = "";
@@ -208,7 +261,6 @@ function renderGrades(myGrades, exams, homework, subjectMap) {
 
 function renderAttendance(attendance, studentName, studentUser) {
   const attListEl = document.getElementById("attendanceList");
-
   if (!attListEl) return;
 
   attListEl.innerHTML = "";
@@ -219,8 +271,13 @@ function renderAttendance(attendance, studentName, studentUser) {
   recentAtt.forEach(session => {
     const me = (session.records || []).find(r => {
       const recordName = normalize(r.name);
+      const recordUser = normalize(r.username);
 
-      return recordName === studentName || recordName === studentUser;
+      return (
+        recordName === studentName ||
+        recordName === studentUser ||
+        recordUser === studentUser
+      );
     });
 
     if (!me || count >= 10) return;
@@ -234,15 +291,13 @@ function renderAttendance(attendance, studentName, studentUser) {
     div.style.alignItems = "center";
     div.style.borderBottom = "1px solid rgba(255,255,255,0.05)";
 
-    const date = safeDate(session);
+    const date = session.date || session.timestamp || "";
     const isPresent = me.status === "Present";
 
     div.innerHTML = `
-      <div style="font-size: 0.85rem;">${date}</div>
-      <div 
-        class="${isPresent ? "tag tag-present" : "tag tag-absent"}" 
-        style="font-size: 0.8rem; font-weight: 600;"
-      >
+      <div style="font-size: 0.85rem;">${safeDate(date)}</div>
+      <div class="${isPresent ? "tag tag-present" : "tag tag-absent"}"
+        style="font-size: 0.8rem; font-weight: 600;">
         ${me.status}
       </div>
     `;
@@ -257,6 +312,131 @@ function renderAttendance(attendance, studentName, studentUser) {
       </div>
     `;
   }
+}
+
+/* =========================================================
+   Homework
+   ========================================================= */
+
+function renderHomework(myHomework, subjectMap) {
+  const list = document.getElementById("homeworkList");
+  if (!list) return;
+
+  list.innerHTML = "";
+
+  if (myHomework.length === 0) {
+    list.innerHTML = `
+      <div class="text-center text-muted" style="padding: 2rem;">
+        No homework assigned yet.
+      </div>
+    `;
+    return;
+  }
+
+  const sorted = myHomework.slice().sort((a, b) =>
+    String(a.due_date || "").localeCompare(String(b.due_date || ""))
+  );
+
+  sorted.forEach(hw => {
+    const subject = subjectMap.get(String(hw.subject_id)) || "General";
+
+    const div = el("div", "item", "");
+    div.style.padding = "1rem";
+    div.style.borderBottom = "1px solid rgba(255,255,255,0.05)";
+
+    div.innerHTML = `
+      <div class="flex justify-between items-center">
+        <div>
+          <div class="title" style="font-size: 0.9rem;">${hw.title}</div>
+          <div class="sub" style="font-size: 0.7rem; opacity: 0.6;">
+            ${subject} • Due ${safeDate(hw.due_date)}
+          </div>
+
+          ${
+            hw.description
+              ? `<div style="font-size: 0.75rem; margin-top: 0.5rem; color: var(--text-secondary);">${hw.description}</div>`
+              : ""
+          }
+        </div>
+
+        <div class="tag tag-late" style="font-size: 0.75rem;">
+          Homework
+        </div>
+      </div>
+    `;
+
+    list.appendChild(div);
+  });
+}
+
+/* =========================================================
+   Agenda
+   ========================================================= */
+
+function renderAgenda(myExams, myHomework, subjectMap) {
+  const list = document.getElementById("agendaList");
+  if (!list) return;
+
+  list.innerHTML = "";
+
+  const agenda = [
+    ...myExams.map(ex => ({
+      type: ex.kind || "exam",
+      title: ex.title,
+      date: ex.date,
+      subject_id: ex.subject_id,
+      badge: ex.kind || "Exam"
+    })),
+
+    ...myHomework.map(hw => ({
+      type: "homework",
+      title: hw.title,
+      date: hw.due_date,
+      subject_id: hw.subject_id,
+      badge: "Homework"
+    }))
+  ];
+
+  agenda.sort((a, b) =>
+    String(a.date || "").localeCompare(String(b.date || ""))
+  );
+
+  if (agenda.length === 0) {
+    list.innerHTML = `
+      <div class="text-center text-muted" style="padding: 2rem;">
+        No upcoming agenda items.
+      </div>
+    `;
+    return;
+  }
+
+  agenda.forEach(item => {
+    const subject = subjectMap.get(String(item.subject_id)) || "General";
+
+    const div = el("div", "item", "");
+    div.style.padding = "1rem";
+    div.style.borderBottom = "1px solid rgba(255,255,255,0.05)";
+
+    const badgeText = item.badge.charAt(0).toUpperCase() + item.badge.slice(1);
+
+    div.innerHTML = `
+      <div class="flex justify-between items-center">
+        <div>
+          <div class="title" style="font-size: 0.9rem;">${item.title}</div>
+          <div class="sub" style="font-size: 0.7rem; opacity: 0.6;">
+            ${subject} • ${safeDate(item.date)}
+          </div>
+        </div>
+
+        <div class="${item.type === "homework" ? "tag tag-late" : "tag tag-present"}"
+          style="font-size: 0.75rem;">
+          ${badgeText}
+        </div>
+      </div>
+    `;
+
+    list.appendChild(div);
+  });
 }
 
 /* =========================================================
