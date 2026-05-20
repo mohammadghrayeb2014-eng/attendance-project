@@ -23,9 +23,14 @@ function normalize(v) {
   return String(v || "").trim().toLowerCase();
 }
 
-function sameId(a, b) {
-  return String(a) === String(b);
-}
+const grade = allGrades.find(g =>
+  (
+    normalize(g.student_name) === normalize(student.name) ||
+    normalize(g.student_username) === normalize(student.username)
+  ) &&
+  g.item_type === item.type &&
+  sameId(g.item_id, item.id)
+);
 
 function showMsg(text, isError = false) {
   const msgEl = document.getElementById("academicMsg");
