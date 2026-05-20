@@ -1,0 +1,28 @@
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+
+# Media and Large Folders
+all\ students/
+cc/
+data/
+output/
+models/
+classroom_videos/
+yolov8n.pt
+*.zip
+*.HEIC
+*.jpg
+*.png
+*.mp4
+*.webm
+
+# Project Specific
+school-portal/node_modules/
+school-portal/.env
+school-portal/data/
+.venv/
+venv/
+.env

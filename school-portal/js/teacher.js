@@ -23,14 +23,9 @@ function normalize(v) {
   return String(v || "").trim().toLowerCase();
 }
 
-const grade = allGrades.find(g =>
-  (
-    normalize(g.student_name) === normalize(student.name) ||
-    normalize(g.student_username) === normalize(student.username)
-  ) &&
-  g.item_type === item.type &&
-  sameId(g.item_id, item.id)
-);
+function sameId(a, b) {
+  return String(a) === String(b);
+}
 
 function showMsg(text, isError = false) {
   const msgEl = document.getElementById("academicMsg");
@@ -103,7 +98,11 @@ async function loadTeacherAssignments() {
   const classById = new Map(classes.map(c => [String(c.id), c]));
   const subjectById = new Map(subjects.map(s => [String(s.id), s]));
 
-  const mine = assignments.filter(a => normalize(a.teacher_username) === username);
+  const teacher_username =
+  normalize(getCurrentUser()?.username);
+
+  const mine = assignments.filter(
+    a => normalize(a.teacher_username) === teacher_username);
 
   allItems = mine.map(a => {
     const c = classById.get(String(a.class_id));
