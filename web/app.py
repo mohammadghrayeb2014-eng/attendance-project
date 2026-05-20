@@ -3,16 +3,13 @@ from flask_cors import CORS
 from pathlib import Path
 from datetime import datetime
 import os
+import time
 import bcrypt
 import secrets
 import string
 import certifi
 from pymongo import MongoClient
 from dotenv import load_dotenv
-
-# =========================================================
-# Paths
-# =========================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 ROOT = BASE_DIR.parent
@@ -23,25 +20,17 @@ OUTPUT_DBG = ROOT / "output" / "debug_frames"
 ATT_CSV = OUTPUT_ATT / "attendance.csv"
 MASTER_CSV = OUTPUT_ATT / "master_attendance.csv"
 
-# =========================================================
-# App setup
-# =========================================================
-
 load_dotenv(BASE_DIR / ".env")
 load_dotenv()
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# =========================================================
-# MongoDB setup
-# =========================================================
-
 MONGO_URI = os.getenv("MONGO_URI", "").strip().strip('"')
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "attendance_db").strip()
 
 if not MONGO_URI:
-    raise RuntimeError("MONGO_URI is missing. Add it to .env locally and Render environment variables online.")
+    raise RuntimeError("MONGO_URI is missing.")
 
 mongo_client = MongoClient(
     MONGO_URI,
@@ -54,9 +43,6 @@ db = mongo_client[MONGO_DB_NAME]
 
 print(f"[OK] Connected to MongoDB database: {MONGO_DB_NAME}")
 
-# =========================================================
-# Helpers
-# =========================================================
 
 def clean_doc(doc):
     if doc:
@@ -64,15 +50,15 @@ def clean_doc(doc):
     return doc
 
 
+def normalize(v):
+    return str(v or "").strip().lower()
+
+
 def next_id(collection_name):
     last = db[collection_name].find_one(sort=[("id", -1)])
     if last and "id" in last:
         return int(last["id"]) + 1
     return 1
-
-
-def normalize(v):
-    return str(v or "").strip().lower()
 
 
 def hash_password(password):
@@ -84,13 +70,12 @@ def check_password(password, password_hash):
 
 
 def generate_password(length=10):
-    alphabet = string.ascii_letters + string.digits + "!$@#"
-    return "".join(secrets.choice(alphabet) for _ in range(length))
+    chars = string.ascii_letters + string.digits + "!$@#"
+    return "".join(secrets.choice(chars) for _ in range(length))
 
 
 def ensure_admin():
     admin = db.users.find_one({"username": "admin"})
-
     if not admin:
         db.users.insert_one({
             "id": 1,
@@ -104,8 +89,9 @@ def ensure_admin():
 
 ensure_admin()
 
+
 # =========================================================
-# Pages / Static frontend
+# Frontend pages
 # =========================================================
 
 @app.get("/")
@@ -144,8 +130,9 @@ def session_page():
 
 
 @app.route("/<path:filename>")
-def serve_frontend_file(filename):
+def static_files(filename):
     return send_from_directory(str(FRONTEND_DIR), filename)
+
 
 # =========================================================
 # Health
@@ -160,12 +147,13 @@ def health():
         "database": MONGO_DB_NAME
     })
 
+
 # =========================================================
-# Auth
+# Auth + users
 # =========================================================
 
 @app.post("/api/login")
-def api_login():
+def login():
     payload = request.get_json(force=True, silent=True) or {}
 
     username = normalize(payload.get("username"))
@@ -180,9 +168,6 @@ def api_login():
         return jsonify({"error": "Invalid credentials"}), 401
 
     password_hash = user.get("password_hash") or ""
-
-    if not password_hash:
-        return jsonify({"error": "Account has no password configured"}), 403
 
     try:
         valid = check_password(password, password_hash)
@@ -199,9 +184,6 @@ def api_login():
         "name": user.get("name", user.get("username"))
     })
 
-# =========================================================
-# Users
-# =========================================================
 
 @app.get("/api/users")
 def get_users():
@@ -268,8 +250,9 @@ def create_student():
 def create_admin():
     return create_user("admin")
 
+
 # =========================================================
-# Classes
+# Classes + seating
 # =========================================================
 
 @app.get("/api/classes")
@@ -302,8 +285,8 @@ def add_class():
     }
 
     db.classes.insert_one(new_class)
-
     clean_doc(new_class)
+
     return jsonify(new_class), 201
 
 
@@ -322,20 +305,18 @@ def update_seat():
     username = normalize(payload.get("username"))
     key = f"{row}_{col}"
 
-    class_doc = db.classes.find_one({"id": class_id})
-
-    if not class_doc:
+    if not db.classes.find_one({"id": class_id}):
         return jsonify({"error": "Class not found"}), 404
 
     if name:
-        seat_value = {
-            "name": name,
-            "username": username or normalize(name)
-        }
-
         db.classes.update_one(
             {"id": class_id},
-            {"$set": {f"seating.{key}": seat_value}}
+            {"$set": {
+                f"seating.{key}": {
+                    "name": name,
+                    "username": username or normalize(name)
+                }
+            }}
         )
     else:
         db.classes.update_one(
@@ -351,8 +332,9 @@ def update_seat():
         "username": username
     })
 
+
 # =========================================================
-# Subjects
+# Subjects + assignments
 # =========================================================
 
 @app.get("/api/subjects")
@@ -376,13 +358,10 @@ def add_subject():
     }
 
     db.subjects.insert_one(subject)
-
     clean_doc(subject)
+
     return jsonify(subject), 201
 
-# =========================================================
-# Assignments
-# =========================================================
 
 @app.get("/api/assignments")
 def get_assignments():
@@ -405,16 +384,13 @@ def add_assignment():
     if not teacher_username or not class_id or not subject_id:
         return jsonify({"error": "Teacher, class, and subject are required"}), 400
 
-    teacher = db.users.find_one({"username": teacher_username, "role": "teacher"})
-    if not teacher:
+    if not db.users.find_one({"username": teacher_username, "role": "teacher"}):
         return jsonify({"error": "Teacher not found"}), 404
 
-    class_doc = db.classes.find_one({"id": class_id})
-    if not class_doc:
+    if not db.classes.find_one({"id": class_id}):
         return jsonify({"error": "Class not found"}), 404
 
-    subject_doc = db.subjects.find_one({"id": subject_id})
-    if not subject_doc:
+    if not db.subjects.find_one({"id": subject_id}):
         return jsonify({"error": "Subject not found"}), 404
 
     existing = db.assignments.find_one({
@@ -434,9 +410,10 @@ def add_assignment():
     }
 
     db.assignments.insert_one(assignment)
-
     clean_doc(assignment)
+
     return jsonify(assignment), 201
+
 
 # =========================================================
 # Exams
@@ -489,9 +466,10 @@ def create_exam():
     }
 
     db.exams.insert_one(exam)
-
     clean_doc(exam)
+
     return jsonify(exam), 201
+
 
 # =========================================================
 # Homework
@@ -544,9 +522,10 @@ def create_homework():
     }
 
     db.homework.insert_one(hw)
-
     clean_doc(hw)
+
     return jsonify(hw), 201
+
 
 # =========================================================
 # Grades
@@ -598,6 +577,12 @@ def save_grades():
 
     for entry in grades_data:
         student_name = (entry.get("student_name") or "").strip()
+        student_username = (
+            entry.get("student_username") or
+            entry.get("username") or
+            ""
+        ).strip().lower()
+
         score = entry.get("score")
         comment = entry.get("comment") or ""
 
@@ -607,6 +592,7 @@ def save_grades():
                 "item_type": item_type,
                 "class_id": class_id,
                 "student_name": student_name,
+                "student_username": student_username,
                 "score": str(score),
                 "comment": comment
             })
@@ -614,7 +600,11 @@ def save_grades():
     if docs:
         db.grades.insert_many(docs)
 
-    return jsonify({"success": True, "saved": len(docs)})
+    return jsonify({
+        "success": True,
+        "saved": len(docs)
+    })
+
 
 # =========================================================
 # Attendance
@@ -646,41 +636,57 @@ def save_attendance():
     date = (payload.get("date") or "").strip()
     records = payload.get("records", [])
 
-    if not class_id or not subject_id or not teacher_username or not date:
-        return jsonify({"error": "Missing required attendance fields"}), 400
+    if not class_id or not teacher_username:
+        return jsonify({"error": "class_id and teacher_username are required"}), 400
+
+    if not date:
+        date = datetime.now().strftime("%Y-%m-%d")
 
     if not isinstance(records, list) or not records:
         return jsonify({"error": "Attendance records are required"}), 400
 
-    att = {
+    clean_records = []
+
+    for r in records:
+        clean_records.append({
+            "seat": r.get("seat"),
+            "name": (r.get("name") or "").strip(),
+            "username": normalize(r.get("username")),
+            "status": r.get("status") or "Absent"
+        })
+
+    attendance = {
         "id": next_id("attendance"),
         "class_id": class_id,
         "subject_id": subject_id,
         "teacher_username": teacher_username,
         "date": date,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "records": records
+        "records": clean_records
     }
 
-    db.attendance.insert_one(att)
+    db.attendance.insert_one(attendance)
+    clean_doc(attendance)
 
-    clean_doc(att)
-    return jsonify({"success": True, "id": att["id"]}), 201
+    return jsonify({
+        "success": True,
+        "id": attendance["id"],
+        "saved": len(clean_records)
+    }), 201
 
 
 @app.get("/api/attendance/latest-ai-result")
 def latest_ai_result():
-    demo_result = [
-        {"name": "ali", "present": "YES", "accuracy": 96},
-        {"name": "abbass", "present": "YES", "accuracy": 94},
-        {"name": "abbass1", "present": "YES", "accuracy": 91},
-        {"name": "hassan", "present": "YES", "accuracy": 93},
-        {"name": "karim", "present": "YES", "accuracy": 95},
-        {"name": "mohammad", "present": "YES", "accuracy": 97},
-        {"name": "sajed", "present": "YES", "accuracy": 92}
-    ]
+    return jsonify([
+        {"name": "ali", "username": "ali", "present": "YES", "accuracy": 96},
+        {"name": "abbass", "username": "abbass", "present": "YES", "accuracy": 94},
+        {"name": "abbass1", "username": "abbass1", "present": "YES", "accuracy": 91},
+        {"name": "hassan", "username": "hassan", "present": "YES", "accuracy": 93},
+        {"name": "karim", "username": "karim", "present": "YES", "accuracy": 95},
+        {"name": "mohammad", "username": "mohammad", "present": "YES", "accuracy": 97},
+        {"name": "sajed", "username": "sajed", "present": "YES", "accuracy": 92}
+    ])
 
-    return jsonify(demo_result)
 
 # =========================================================
 # Reports
@@ -699,29 +705,35 @@ def attendance_report():
 
     for session in sessions:
         for record in session.get("records", []):
-            name = record.get("name")
+            key = normalize(record.get("username")) or normalize(record.get("name"))
+            name = record.get("name") or record.get("username")
             status = record.get("status")
 
-            if not name:
+            if not key:
                 continue
 
-            if name not in stats:
-                stats[name] = {"present": 0, "absent": 0, "total": 0}
+            if key not in stats:
+                stats[key] = {
+                    "name": name,
+                    "present": 0,
+                    "absent": 0,
+                    "total": 0
+                }
 
-            stats[name]["total"] += 1
+            stats[key]["total"] += 1
 
             if status == "Present":
-                stats[name]["present"] += 1
+                stats[key]["present"] += 1
             else:
-                stats[name]["absent"] += 1
+                stats[key]["absent"] += 1
 
     result = []
 
-    for name, data in stats.items():
+    for data in stats.values():
         pct = (data["present"] / data["total"] * 100) if data["total"] else 0
 
         result.append({
-            "name": name,
+            "name": data["name"],
             "present": data["present"],
             "absent": data["absent"],
             "total": data["total"],
@@ -742,44 +754,47 @@ def performance_report():
     stats = {}
 
     for grade in grades:
-        name = grade.get("student_name")
-        score = grade.get("score")
-
-        if not name:
-            continue
+        key = normalize(grade.get("student_username")) or normalize(grade.get("student_name"))
+        name = grade.get("student_name") or grade.get("student_username")
 
         try:
-            score = float(score)
+            score = float(grade.get("score"))
         except Exception:
             continue
 
-        if name not in stats:
-            stats[name] = []
+        if not key:
+            continue
 
-        stats[name].append(score)
+        if key not in stats:
+            stats[key] = {
+                "name": name,
+                "scores": []
+            }
+
+        stats[key]["scores"].append(score)
 
     result = []
 
-    for name, scores in stats.items():
-        avg = sum(scores) / len(scores) if scores else 0
+    for data in stats.values():
+        avg = sum(data["scores"]) / len(data["scores"]) if data["scores"] else 0
 
         result.append({
-            "name": name,
+            "name": data["name"],
             "average": round(avg, 1),
-            "count": len(scores)
+            "count": len(data["scores"])
         })
 
     return jsonify(result)
 
+
 # =========================================================
-# Optional CSV/debug endpoints
+# Optional CSV/debug
 # =========================================================
 
 @app.get("/api/attendance")
 def attendance_csv():
     if not ATT_CSV.exists():
         return jsonify({"ok": False, "error": "attendance.csv not found"}), 404
-
     return send_from_directory(OUTPUT_ATT, "attendance.csv", as_attachment=False)
 
 
@@ -787,7 +802,6 @@ def attendance_csv():
 def master_csv():
     if not MASTER_CSV.exists():
         return jsonify({"ok": False, "error": "master_attendance.csv not found"}), 404
-
     return send_from_directory(OUTPUT_ATT, "master_attendance.csv", as_attachment=False)
 
 
@@ -795,7 +809,6 @@ def master_csv():
 def debug_list():
     if not OUTPUT_DBG.exists():
         return jsonify({"ok": True, "files": []})
-
     files = sorted([p.name for p in OUTPUT_DBG.glob("*.jpg")])
     return jsonify({"ok": True, "files": files[:80]})
 
@@ -803,6 +816,7 @@ def debug_list():
 @app.get("/debug/<path:filename>")
 def debug_file(filename):
     return send_from_directory(OUTPUT_DBG, filename)
+
 
 # =========================================================
 # Run

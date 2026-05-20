@@ -5,27 +5,17 @@ const ACTIVE_KEY = "active_assignment";
 let allItems = [];
 let selected = null;
 
-/* =========================================================
-   Utilities
-   ========================================================= */
-
 async function fetchJSON(url, options = {}) {
   const res = await fetch(url, options);
   const data = await res.json().catch(() => ({}));
-
-  if (!res.ok) {
-    throw new Error(data.error || "Request failed");
-  }
-
+  if (!res.ok) throw new Error(data.error || "Request failed");
   return data;
 }
 
 function el(tag, className, text) {
   const x = document.createElement(tag);
-
   if (className) x.className = className;
   if (text !== undefined) x.textContent = text;
-
   return x;
 }
 
@@ -39,7 +29,6 @@ function sameId(a, b) {
 
 function showMsg(text, isError = false) {
   const msgEl = document.getElementById("academicMsg");
-
   if (!msgEl) return;
 
   msgEl.textContent = text || "";
@@ -56,13 +45,8 @@ function getSelectedOrAlert() {
     });
     return null;
   }
-
   return selected;
 }
-
-/* =========================================================
-   Selected Class UI
-   ========================================================= */
 
 function setSelectedUI(item) {
   const box = document.getElementById("selectedBox");
@@ -73,32 +57,20 @@ function setSelectedUI(item) {
   box.style.flexDirection = "column";
   box.style.gap = "0.5rem";
 
-  const title = el("div", "", "");
-  title.style.fontSize = "1.25rem";
-  title.style.fontWeight = "800";
-  title.style.color = "var(--p-600)";
-  title.innerHTML = `
-    <i class="fa-solid fa-graduation-cap" style="margin-right: 0.5rem;"></i>
-    ${item.class_name}
+  box.innerHTML = `
+    <div style="font-size:1.25rem;font-weight:800;color:var(--p-600);">
+      <i class="fa-solid fa-graduation-cap" style="margin-right:0.5rem;"></i>
+      ${item.class_name}
+    </div>
+    <div style="font-size:1rem;font-weight:600;color:var(--text-main);">
+      ${item.subject_name}
+    </div>
+    <div class="pillrow" style="margin-top:0.5rem;">
+      <div class="pill"><i class="fa-solid fa-chair"></i> ${item.rows}x${item.cols}</div>
+      <div class="pill"><i class="fa-solid fa-hashtag"></i> Class ID: ${item.class_id}</div>
+      <div class="pill"><i class="fa-solid fa-book"></i> Subject ID: ${item.subject_id}</div>
+    </div>
   `;
-
-  const subtitle = el("div", "", "");
-  subtitle.style.fontSize = "1rem";
-  subtitle.style.fontWeight = "600";
-  subtitle.style.color = "var(--text-main)";
-  subtitle.textContent = item.subject_name;
-
-  const meta = el("div", "pillrow", "");
-  meta.style.marginTop = "0.5rem";
-  meta.innerHTML = `
-    <div class="pill"><i class="fa-solid fa-chair"></i> ${item.rows}x${item.cols}</div>
-    <div class="pill"><i class="fa-solid fa-hashtag"></i> Class ID: ${item.class_id}</div>
-    <div class="pill"><i class="fa-solid fa-book"></i> Subject ID: ${item.subject_id}</div>
-  `;
-
-  box.appendChild(title);
-  box.appendChild(subtitle);
-  box.appendChild(meta);
 
   const openBtn = document.getElementById("openBtn");
   if (openBtn) openBtn.disabled = false;
@@ -106,10 +78,6 @@ function setSelectedUI(item) {
   const status = document.getElementById("status");
   if (status) status.textContent = "";
 }
-
-/* =========================================================
-   Teacher Assignments
-   ========================================================= */
 
 async function loadTeacherAssignments() {
   const user = getCurrentUser();
@@ -130,9 +98,7 @@ async function loadTeacherAssignments() {
   const classById = new Map(classes.map(c => [String(c.id), c]));
   const subjectById = new Map(subjects.map(s => [String(s.id), s]));
 
-  const mine = assignments.filter(a =>
-    normalize(a.teacher_username) === username
-  );
+  const mine = assignments.filter(a => normalize(a.teacher_username) === username);
 
   allItems = mine.map(a => {
     const c = classById.get(String(a.class_id));
@@ -153,7 +119,9 @@ async function loadTeacherAssignments() {
   selected = null;
 
   const selectedBox = document.getElementById("selectedBox");
-  if (selectedBox) selectedBox.textContent = "Select a classroom from the left to initialize a live session.";
+  if (selectedBox) {
+    selectedBox.textContent = "Select a classroom from the left to initialize a live session.";
+  }
 
   const openBtn = document.getElementById("openBtn");
   if (openBtn) openBtn.disabled = true;
@@ -175,27 +143,16 @@ function renderList(items) {
 
   items.forEach(item => {
     const row = el("div", "item");
-
     const left = el("div", "meta");
 
-    const title = el("div", "title", `${item.class_name} — ${item.subject_name}`);
-    const sub = el(
-      "div",
-      "sub",
-      `Class ID: ${item.class_id} • Subject ID: ${item.subject_id}`
-    );
-
-    const pillrow = el("div", "pillrow");
-
-    const p1 = el("div", "pill", `${item.rows} x ${item.cols} seats`);
-    const p2 = el("div", "pill", `Teacher: ${item.teacher_username}`);
-
-    pillrow.appendChild(p1);
-    pillrow.appendChild(p2);
-
-    left.appendChild(title);
-    left.appendChild(sub);
-    left.appendChild(pillrow);
+    left.innerHTML = `
+      <div class="title">${item.class_name} — ${item.subject_name}</div>
+      <div class="sub">Class ID: ${item.class_id} • Subject ID: ${item.subject_id}</div>
+      <div class="pillrow">
+        <div class="pill">${item.rows} x ${item.cols} seats</div>
+        <div class="pill">Teacher: ${item.teacher_username}</div>
+      </div>
+    `;
 
     const right = el("div");
     const btn = el("button", "btn-premium-sm", "Select");
@@ -207,10 +164,8 @@ function renderList(items) {
     });
 
     right.appendChild(btn);
-
     row.appendChild(left);
     row.appendChild(right);
-
     list.appendChild(row);
   });
 }
@@ -223,23 +178,16 @@ function applySearch() {
     return;
   }
 
-  const filtered = allItems.filter(i =>
-    normalize(i.class_name).includes(q) ||
-    normalize(i.subject_name).includes(q)
+  renderList(
+    allItems.filter(i =>
+      normalize(i.class_name).includes(q) ||
+      normalize(i.subject_name).includes(q)
+    )
   );
-
-  renderList(filtered);
 }
-
-/* =========================================================
-   Academic Data Overview
-   ========================================================= */
 
 async function loadAcademicData() {
   if (!selected) return;
-
-  const msgEl = document.getElementById("academicMsg");
-  if (!msgEl) return;
 
   try {
     const [exams, homework] = await Promise.all([
@@ -247,19 +195,12 @@ async function loadAcademicData() {
       fetchJSON(`${API}/homework?class_id=${selected.class_id}&subject_id=${selected.subject_id}`).catch(() => [])
     ]);
 
-    msgEl.className = "tag tag-present";
-    msgEl.style.display = "inline-block";
-    msgEl.textContent = `Loaded ${exams.length} exam(s) and ${homework.length} homework item(s) for this class.`;
-
+    showMsg(`Loaded ${exams.length} exam(s) and ${homework.length} homework item(s) for this class.`);
   } catch (err) {
     console.error("Failed to load academic data:", err);
     showMsg("Failed to load academic data.", true);
   }
 }
-
-/* =========================================================
-   Exam Creation
-   ========================================================= */
 
 async function createExam() {
   const item = getSelectedOrAlert();
@@ -267,8 +208,6 @@ async function createExam() {
 
   const title = document.getElementById("examTitle")?.value.trim();
   const date = document.getElementById("examDate")?.value;
-
-  // Important fix: examKind may not exist in your HTML
   const kind = document.getElementById("examKind")?.value || "exam";
 
   if (!title || !date) {
@@ -281,9 +220,7 @@ async function createExam() {
 
     await fetchJSON(`${API}/exams`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         teacher_username: user.username,
         class_id: item.class_id,
@@ -298,18 +235,12 @@ async function createExam() {
     document.getElementById("examDate").value = "";
 
     showMsg("✅ Exam created successfully.");
-
     await loadAcademicData();
-
   } catch (err) {
     console.error("Create exam failed:", err);
     showMsg("Failed to create exam: " + err.message, true);
   }
 }
-
-/* =========================================================
-   Homework Creation
-   ========================================================= */
 
 async function createHomework() {
   const item = getSelectedOrAlert();
@@ -317,8 +248,6 @@ async function createHomework() {
 
   const title = document.getElementById("hwTitle")?.value.trim();
   const due_date = document.getElementById("hwDueDate")?.value;
-
-  // Important fix: hwDesc may not exist in your HTML
   const description = document.getElementById("hwDesc")?.value.trim() || "";
 
   if (!title || !due_date) {
@@ -331,9 +260,7 @@ async function createHomework() {
 
     await fetchJSON(`${API}/homework`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         teacher_username: user.username,
         class_id: item.class_id,
@@ -346,24 +273,15 @@ async function createHomework() {
 
     document.getElementById("hwTitle").value = "";
     document.getElementById("hwDueDate").value = "";
-
-    if (document.getElementById("hwDesc")) {
-      document.getElementById("hwDesc").value = "";
-    }
+    if (document.getElementById("hwDesc")) document.getElementById("hwDesc").value = "";
 
     showMsg("✅ Homework posted successfully.");
-
     await loadAcademicData();
-
   } catch (err) {
     console.error("Create homework failed:", err);
     showMsg("Failed to create homework: " + err.message, true);
   }
 }
-
-/* =========================================================
-   Grading
-   ========================================================= */
 
 async function loadGradingItems() {
   const select = document.getElementById("gradeItemSelect");
@@ -374,7 +292,7 @@ async function loadGradingItems() {
 
   if (!selected) {
     select.innerHTML = '<option value="">-- Select a class first --</option>';
-    if (listEl) listEl.innerHTML = '<div style="padding: 1rem;">Select a class first.</div>';
+    if (listEl) listEl.innerHTML = '<div style="padding:1rem;">Select a class first.</div>';
     if (saveBtn) saveBtn.style.display = "none";
     return;
   }
@@ -399,12 +317,8 @@ async function loadGradingItems() {
       select.appendChild(opt);
     });
 
-    if (listEl) {
-      listEl.innerHTML = '<div style="padding: 1rem; text-align:center;">Choose an item to grade.</div>';
-    }
-
+    if (listEl) listEl.innerHTML = '<div style="padding:1rem;text-align:center;">Choose an item to grade.</div>';
     if (saveBtn) saveBtn.style.display = "none";
-
   } catch (err) {
     console.error("Failed to load grading items:", err);
     if (listEl) listEl.innerHTML = "Failed to load grading items.";
@@ -416,19 +330,36 @@ async function getStudentsInSelectedClass() {
 
   const classes = await fetchJSON(`${API}/classes`);
   const currentClass = classes.find(c => sameId(c.id, selected.class_id));
-
   if (!currentClass) return [];
 
   const seating = currentClass.seating || {};
+
   const students = Object.values(seating)
     .map(v => {
-      if (typeof v === "string") return v;
-      if (v && typeof v === "object") return v.name || v.username || "";
-      return "";
-    })
-    .filter(Boolean);
+      if (typeof v === "string") {
+        return { name: v, username: normalize(v) };
+      }
 
-  return [...new Set(students)].sort();
+      if (v && typeof v === "object") {
+        return {
+          name: v.name || v.username || "",
+          username: v.username || normalize(v.name)
+        };
+      }
+
+      return null;
+    })
+    .filter(s => s && s.name);
+
+  const unique = new Map();
+
+  students.forEach(s => {
+    unique.set(normalize(s.username || s.name), s);
+  });
+
+  return Array.from(unique.values()).sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
 }
 
 async function loadGradingList() {
@@ -439,7 +370,7 @@ async function loadGradingList() {
   if (!listEl || !saveBtn) return;
 
   if (!val || !selected) {
-    listEl.innerHTML = '<div style="padding: 1rem; text-align: center;">Select an item to grade.</div>';
+    listEl.innerHTML = '<div style="padding:1rem;text-align:center;">Select an item to grade.</div>';
     saveBtn.style.display = "none";
     return;
   }
@@ -453,7 +384,7 @@ async function loadGradingList() {
 
     if (students.length === 0) {
       listEl.innerHTML = `
-        <div style="padding: 1rem; text-align: center;">
+        <div style="padding:1rem;text-align:center;">
           No students found in this class seating chart. Add students to seats first.
         </div>
       `;
@@ -461,15 +392,17 @@ async function loadGradingList() {
       return;
     }
 
-    const existingGrades = await fetchJSON(`${API}/grades?item_id=${id}&item_type=${type}&class_id=${selected.class_id}`).catch(() => []);
+    const existingGrades = await fetchJSON(
+      `${API}/grades?item_id=${id}&item_type=${type}&class_id=${selected.class_id}`
+    ).catch(() => []);
 
     listEl.innerHTML = `
-      <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+      <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
         <thead>
-          <tr style="text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1);">
-            <th style="padding: 0.5rem;">Student</th>
-            <th style="padding: 0.5rem; width: 90px;">Score</th>
-            <th style="padding: 0.5rem;">Comment</th>
+          <tr style="text-align:left;border-bottom:1px solid rgba(255,255,255,0.1);">
+            <th style="padding:0.5rem;">Student</th>
+            <th style="padding:0.5rem;width:90px;">Score</th>
+            <th style="padding:0.5rem;">Comment</th>
           </tr>
         </thead>
         <tbody id="gradingTableBody"></tbody>
@@ -478,34 +411,39 @@ async function loadGradingList() {
 
     const tbody = document.getElementById("gradingTableBody");
 
-    students.forEach(name => {
-      const g = existingGrades.find(x => normalize(x.student_name) === normalize(name)) || {};
+    students.forEach(student => {
+      const g = existingGrades.find(x =>
+        normalize(x.student_name) === normalize(student.name) ||
+        normalize(x.student_username) === normalize(student.username)
+      ) || {};
 
       const tr = document.createElement("tr");
       tr.style.borderBottom = "1px solid rgba(255,255,255,0.05)";
 
       tr.innerHTML = `
-        <td style="padding: 0.75rem;">${name}</td>
+        <td style="padding:0.75rem;">${student.name}</td>
 
-        <td style="padding: 0.75rem;">
+        <td style="padding:0.75rem;">
           <input
             type="number"
             min="0"
             max="100"
             class="grade-score input-field"
-            data-student="${name}"
+            data-student-name="${student.name}"
+            data-student-username="${student.username}"
             value="${g.score || ""}"
-            style="margin-bottom:0; padding: 0.35rem; font-size: 0.8rem; width: 75px;"
+            style="margin-bottom:0;padding:0.35rem;font-size:0.8rem;width:75px;"
           >
         </td>
 
-        <td style="padding: 0.75rem;">
+        <td style="padding:0.75rem;">
           <input
             type="text"
             class="grade-comment input-field"
-            data-student="${name}"
+            data-student-name="${student.name}"
+            data-student-username="${student.username}"
             value="${g.comment || ""}"
-            style="margin-bottom:0; padding: 0.35rem; font-size: 0.8rem;"
+            style="margin-bottom:0;padding:0.35rem;font-size:0.8rem;"
             placeholder="Note..."
           >
         </td>
@@ -515,7 +453,6 @@ async function loadGradingList() {
     });
 
     saveBtn.style.display = "block";
-
   } catch (err) {
     console.error("Failed to load grading list:", err);
     listEl.innerHTML = "Error loading students.";
@@ -532,20 +469,21 @@ async function saveGrades() {
   }
 
   const [type, id] = val.split("_");
-
   const scores = document.querySelectorAll(".grade-score");
   const comments = document.querySelectorAll(".grade-comment");
 
   const grades = [];
 
   scores.forEach((input, i) => {
-    const student_name = input.dataset.student;
+    const student_name = input.dataset.studentName;
+    const student_username = input.dataset.studentUsername;
     const score = input.value;
     const comment = comments[i]?.value || "";
 
     if (score !== "") {
       grades.push({
         student_name,
+        student_username,
         score,
         comment
       });
@@ -553,17 +491,16 @@ async function saveGrades() {
   });
 
   const btn = document.getElementById("saveGradesBtn");
+
   if (btn) {
     btn.disabled = true;
     btn.textContent = "Saving...";
   }
 
   try {
-    await fetchJSON(`${API}/grades`, {
+    const result = await fetchJSON(`${API}/grades`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         item_id: id,
         item_type: type,
@@ -572,14 +509,14 @@ async function saveGrades() {
       })
     });
 
-    showMsg("✅ Grades saved successfully.");
+    showMsg(`✅ Grades saved successfully. Saved: ${result.saved}`);
 
+    await loadGradingList();
     await loadGradebook();
-
+    await loadTeacherStats();
   } catch (err) {
     console.error("Save grades failed:", err);
     showMsg("Failed to save grades: " + err.message, true);
-
   } finally {
     if (btn) {
       btn.disabled = false;
@@ -588,17 +525,12 @@ async function saveGrades() {
   }
 }
 
-/* =========================================================
-   Gradebook
-   ========================================================= */
-
 async function loadGradebook() {
   const viewEl = document.getElementById("gradebookView");
-
   if (!viewEl) return;
 
   if (!selected) {
-    viewEl.innerHTML = '<div style="padding: 1rem;">Select a class first.</div>';
+    viewEl.innerHTML = '<div style="padding:1rem;">Select a class first.</div>';
     return;
   }
 
@@ -614,7 +546,7 @@ async function loadGradebook() {
     const students = await getStudentsInSelectedClass();
 
     if (students.length === 0) {
-      viewEl.innerHTML = '<div style="padding: 1rem; text-align: center;">No students in seating chart.</div>';
+      viewEl.innerHTML = '<div style="padding:1rem;text-align:center;">No students in seating chart.</div>';
       return;
     }
 
@@ -624,79 +556,67 @@ async function loadGradebook() {
     ];
 
     if (items.length === 0) {
-      viewEl.innerHTML = '<div style="padding: 1rem; text-align: center;">No exams or homework created yet.</div>';
+      viewEl.innerHTML = '<div style="padding:1rem;text-align:center;">No exams or homework created yet.</div>';
       return;
     }
 
     let html = `
-      <table style="width: 100%; border-collapse: collapse; font-size: 0.75rem;">
+      <table style="width:100%;border-collapse:collapse;font-size:0.75rem;">
         <thead>
-          <tr style="text-align: left; border-bottom: 2px solid rgba(255,255,255,0.1);">
-            <th style="padding: 0.5rem; min-width: 120px;">Student</th>
+          <tr style="text-align:left;border-bottom:2px solid rgba(255,255,255,0.1);">
+            <th style="padding:0.5rem;min-width:120px;">Student</th>
     `;
 
     items.forEach(item => {
       html += `
-        <th style="padding: 0.5rem; text-align: center;">
+        <th style="padding:0.5rem;text-align:center;">
           ${item.title}<br>
-          <span style="font-size: 0.6rem; opacity: 0.6;">${item.type}</span>
+          <span style="font-size:0.6rem;opacity:0.6;">${item.type}</span>
         </th>
       `;
     });
 
-    html += `
-          </tr>
-        </thead>
-        <tbody>
-    `;
+    html += `</tr></thead><tbody>`;
 
-    students.forEach(name => {
+    students.forEach(student => {
       html += `
-        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-          <td style="padding: 0.5rem; font-weight: 600;">${name}</td>
+        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+          <td style="padding:0.5rem;font-weight:600;">${student.name}</td>
       `;
 
       items.forEach(item => {
         const grade = allGrades.find(g =>
-          normalize(g.student_name) === normalize(name) &&
+          (
+            normalize(g.student_name) === normalize(student.name) ||
+            normalize(g.student_username) === normalize(student.username)
+          ) &&
           g.item_type === item.type &&
           sameId(g.item_id, item.id)
         );
 
         const score = grade && grade.score !== undefined ? grade.score : "-";
 
-        html += `
-          <td style="padding: 0.5rem; text-align: center;">${score}</td>
-        `;
+        html += `<td style="padding:0.5rem;text-align:center;">${score}</td>`;
       });
 
       html += `</tr>`;
     });
 
-    html += `
-        </tbody>
-      </table>
-    `;
+    html += `</tbody></table>`;
 
     viewEl.innerHTML = html;
-
   } catch (err) {
     console.error("Failed to load gradebook:", err);
     viewEl.innerHTML = "Error loading gradebook.";
   }
 }
 
-/* =========================================================
-   Reports
-   ========================================================= */
-
 async function loadTeacherReports() {
   const viewEl = document.getElementById("reportsView");
-
   if (!viewEl) return;
 
   if (!selected) {
-    viewEl.innerHTML = '<div style="padding: 1rem;">Select a class first.</div>';
+    viewEl.innerHTML = '<div style="padding:1rem;">Select a class first.</div>';
     return;
   }
 
@@ -706,60 +626,45 @@ async function loadTeacherReports() {
     const stats = await fetchJSON(`${API}/reports/attendance?class_id=${selected.class_id}`).catch(() => []);
 
     if (stats.length === 0) {
-      viewEl.innerHTML = '<div style="padding: 1rem; text-align: center;">No attendance data found for this class.</div>';
+      viewEl.innerHTML = '<div style="padding:1rem;text-align:center;">No attendance data found for this class.</div>';
       return;
     }
 
     let html = `
-      <div style="margin-bottom: 1.5rem;">
-        <h4 style="font-size: 0.9rem; margin-bottom: 0.5rem;">
-          <i class="fa-solid fa-chart-line"></i> Class Attendance Summary
-        </h4>
-
-        <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
-          <thead>
-            <tr style="text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1);">
-              <th style="padding: 0.5rem;">Student</th>
-              <th style="padding: 0.5rem; text-align: center;">Sessions</th>
-              <th style="padding: 0.5rem; text-align: center;">Present</th>
-              <th style="padding: 0.5rem; text-align: center;">Absent</th>
-              <th style="padding: 0.5rem; text-align: center;">Attendance %</th>
-            </tr>
-          </thead>
-          <tbody>
+      <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+        <thead>
+          <tr style="text-align:left;border-bottom:1px solid rgba(255,255,255,0.1);">
+            <th style="padding:0.5rem;">Student</th>
+            <th style="padding:0.5rem;text-align:center;">Sessions</th>
+            <th style="padding:0.5rem;text-align:center;">Present</th>
+            <th style="padding:0.5rem;text-align:center;">Absent</th>
+            <th style="padding:0.5rem;text-align:center;">Attendance %</th>
+          </tr>
+        </thead>
+        <tbody>
     `;
 
     stats.forEach(s => {
       const color = s.percentage < 75 ? "var(--accent-secondary)" : "var(--accent-primary)";
 
       html += `
-        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-          <td style="padding: 0.6rem;">${s.name}</td>
-          <td style="padding: 0.6rem; text-align: center;">${s.total}</td>
-          <td style="padding: 0.6rem; text-align: center; color: var(--accent-primary);">${s.present}</td>
-          <td style="padding: 0.6rem; text-align: center; color: var(--accent-secondary);">${s.absent}</td>
-          <td style="padding: 0.6rem; text-align: center; font-weight: 700; color: ${color};">${s.percentage}%</td>
+        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+          <td style="padding:0.6rem;">${s.name}</td>
+          <td style="padding:0.6rem;text-align:center;">${s.total}</td>
+          <td style="padding:0.6rem;text-align:center;color:var(--accent-primary);">${s.present}</td>
+          <td style="padding:0.6rem;text-align:center;color:var(--accent-secondary);">${s.absent}</td>
+          <td style="padding:0.6rem;text-align:center;font-weight:700;color:${color};">${s.percentage}%</td>
         </tr>
       `;
     });
 
-    html += `
-          </tbody>
-        </table>
-      </div>
-    `;
-
+    html += `</tbody></table>`;
     viewEl.innerHTML = html;
-
   } catch (err) {
     console.error("Failed to load reports:", err);
     viewEl.innerHTML = "Error loading reports.";
   }
 }
-
-/* =========================================================
-   Export
-   ========================================================= */
 
 function exportTableToCSV(tableSelector, filename) {
   const table = document.querySelector(tableSelector);
@@ -783,11 +688,7 @@ function exportTableToCSV(tableSelector, filename) {
     csv.push(data.join(","));
   });
 
-  const csvString = csv.join("\n");
-  const blob = new Blob([csvString], {
-    type: "text/csv"
-  });
-
+  const blob = new Blob([csv.join("\n")], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
 
@@ -816,14 +717,9 @@ function exportReportToCSV() {
   );
 }
 
-/* =========================================================
-   Teacher Stats
-   ========================================================= */
-
 async function loadTeacherStats() {
   try {
     const user = getCurrentUser();
-
     if (!user) return;
 
     const [assignments, attendance, grades] = await Promise.all([
@@ -851,10 +747,7 @@ async function loadTeacherStats() {
     mySessions.forEach(s => {
       (s.records || []).forEach(r => {
         totalRecords++;
-
-        if (r.status === "Present") {
-          presentRecords++;
-        }
+        if (r.status === "Present") presentRecords++;
       });
     });
 
@@ -862,26 +755,23 @@ async function loadTeacherStats() {
       ? Math.round((presentRecords / totalRecords) * 100)
       : 0;
 
-    const myGrades = grades.filter(g =>
-      myClassIds.has(String(g.class_id))
-    );
+    const myGrades = grades.filter(g => myClassIds.has(String(g.class_id)));
 
-    const statMyClasses = document.getElementById("statMyClasses");
-    const statMyAttendance = document.getElementById("statMyAttendance");
-    const statMyGraded = document.getElementById("statMyGraded");
+    if (document.getElementById("statMyClasses")) {
+      document.getElementById("statMyClasses").textContent = myAssignments.length;
+    }
 
-    if (statMyClasses) statMyClasses.textContent = myAssignments.length;
-    if (statMyAttendance) statMyAttendance.textContent = `${avgAttendance}%`;
-    if (statMyGraded) statMyGraded.textContent = myGrades.length;
+    if (document.getElementById("statMyAttendance")) {
+      document.getElementById("statMyAttendance").textContent = `${avgAttendance}%`;
+    }
 
+    if (document.getElementById("statMyGraded")) {
+      document.getElementById("statMyGraded").textContent = myGrades.length;
+    }
   } catch (err) {
     console.error("Failed to load teacher stats:", err);
   }
 }
-
-/* =========================================================
-   UI Wiring
-   ========================================================= */
 
 function showTab(tabId, containerId) {
   const tabs = ["tabExam", "tabHomework", "tabGrading", "tabGradebook", "tabReports"];
@@ -912,7 +802,7 @@ function showTab(tabId, containerId) {
 }
 
 function wireUI() {
-  document.getElementById("navMyClasses")?.addEventListener("click", (e) => {
+  document.getElementById("navMyClasses")?.addEventListener("click", e => {
     e.preventDefault();
     document.getElementById("panelClasses")?.scrollIntoView({
       behavior: "smooth",
@@ -920,7 +810,7 @@ function wireUI() {
     });
   });
 
-  document.getElementById("navLiveSession")?.addEventListener("click", (e) => {
+  document.getElementById("navLiveSession")?.addEventListener("click", e => {
     e.preventDefault();
 
     if (selected) {
@@ -934,7 +824,7 @@ function wireUI() {
     }
   });
 
-  document.getElementById("navAttendance")?.addEventListener("click", (e) => {
+  document.getElementById("navAttendance")?.addEventListener("click", e => {
     e.preventDefault();
     showTab("tabReports", "reportsContainer");
   });
@@ -949,51 +839,30 @@ function wireUI() {
 
   document.getElementById("openBtn")?.addEventListener("click", () => {
     if (!selected) return;
-
     localStorage.setItem(ACTIVE_KEY, JSON.stringify(selected));
     window.location.href = "class.html";
   });
 
-  document.getElementById("tabExam")?.addEventListener("click", () => {
-    showTab("tabExam", "examContainer");
-  });
-
-  document.getElementById("tabHomework")?.addEventListener("click", () => {
-    showTab("tabHomework", "homeworkContainer");
-  });
-
-  document.getElementById("tabGrading")?.addEventListener("click", () => {
-    showTab("tabGrading", "gradingContainer");
-  });
-
-  document.getElementById("tabGradebook")?.addEventListener("click", () => {
-    showTab("tabGradebook", "gradebookContainer");
-  });
-
-  document.getElementById("tabReports")?.addEventListener("click", () => {
-    showTab("tabReports", "reportsContainer");
-  });
+  document.getElementById("tabExam")?.addEventListener("click", () => showTab("tabExam", "examContainer"));
+  document.getElementById("tabHomework")?.addEventListener("click", () => showTab("tabHomework", "homeworkContainer"));
+  document.getElementById("tabGrading")?.addEventListener("click", () => showTab("tabGrading", "gradingContainer"));
+  document.getElementById("tabGradebook")?.addEventListener("click", () => showTab("tabGradebook", "gradebookContainer"));
+  document.getElementById("tabReports")?.addEventListener("click", () => showTab("tabReports", "reportsContainer"));
 
   document.getElementById("createExamBtn")?.addEventListener("click", createExam);
   document.getElementById("createHwBtn")?.addEventListener("click", createHomework);
-
   document.getElementById("gradeItemSelect")?.addEventListener("change", loadGradingList);
   document.getElementById("saveGradesBtn")?.addEventListener("click", saveGrades);
-
   document.getElementById("exportGradesBtn")?.addEventListener("click", exportGradebookToCSV);
   document.getElementById("exportReportsBtn")?.addEventListener("click", exportReportToCSV);
 
   ["logoutBtn", "headerLogoutBtn"].forEach(id => {
-    document.getElementById(id)?.addEventListener("click", (e) => {
+    document.getElementById(id)?.addEventListener("click", e => {
       e.preventDefault();
       logout();
     });
   });
 }
-
-/* =========================================================
-   Init
-   ========================================================= */
 
 document.addEventListener("DOMContentLoaded", async () => {
   protectPage("teacher");
