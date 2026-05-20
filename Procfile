@@ -1,1 +1,1 @@
-web: gunicorn --chdir school-portal/backend app:app
+web: gunicorn web.app:app
