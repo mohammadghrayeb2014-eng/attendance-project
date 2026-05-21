@@ -8,6 +8,7 @@ import os
 import csv
 import json
 import pickle
+import re
 import subprocess
 import sys
 import urllib.request
@@ -94,7 +95,7 @@ def docs_to_list(collection):
 
 
 def normalized_gcs_bucket_name():
-    bucket = GCS_VIDEO_BUCKET.strip()
+    bucket = GCS_VIDEO_BUCKET.strip().strip("\"'")
 
     if bucket.startswith("gs://"):
         bucket = bucket[5:]
@@ -102,13 +103,16 @@ def normalized_gcs_bucket_name():
     if bucket.startswith("https://storage.googleapis.com/"):
         bucket = bucket.removeprefix("https://storage.googleapis.com/")
 
-    bucket = bucket.split("/", 1)[0].strip()
+    bucket = bucket.replace("\\", "/").split("/", 1)[0].strip().strip("\"'")
 
     if not bucket:
         return ""
 
-    if bucket[0] in ".-" or bucket[-1] in ".-":
-        raise ValueError("GCS_VIDEO_BUCKET must be a bucket name, not a URL or path.")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]", bucket):
+        raise ValueError(
+            "GCS_VIDEO_BUCKET must be only the bucket name, like "
+            "attendance-project-uploads. Remove quotes, spaces, gs://, and paths."
+        )
 
     return bucket
 
