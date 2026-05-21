@@ -643,6 +643,7 @@ async function uploadLargeVideoViaGcs(file) {
   const data = await readResponse(processRes);
 
   if (!processRes.ok || !data.success) {
+    console.error("AI processing response:", data);
     const detail = data.details ? ` ${data.details}` : "";
     throw new Error(`${data.error || "AI processing failed."}${detail}`);
   }

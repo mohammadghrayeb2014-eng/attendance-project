@@ -200,7 +200,34 @@ def ai_failure_details(result):
 
     stderr = (result.stderr or "").strip()
     stdout = (result.stdout or "").strip()
-    detail = stderr or stdout
+    noisy_patterns = (
+        "cuda",
+        "cudnn",
+        "cublas",
+        "cufft",
+        "tensorrt",
+        "cpu_feature_guard",
+        "tensorflow/core/platform",
+        "stream_executor",
+        "this tensorflow binary is optimized"
+    )
+
+    lines = []
+
+    for line in (stdout + "\n" + stderr).splitlines():
+        clean = line.strip()
+
+        if not clean:
+            continue
+
+        lower = clean.lower()
+
+        if any(pattern in lower for pattern in noisy_patterns):
+            continue
+
+        lines.append(clean)
+
+    detail = "\n".join(lines[-20:]) or stdout or stderr
 
     return detail[-1200:]
 

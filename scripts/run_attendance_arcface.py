@@ -7,6 +7,9 @@ from datetime import datetime
 import sys
 import os
 
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+
 # Fix Windows console encoding
 if sys.platform == 'win32':
     os.system('chcp 65001 > nul')
