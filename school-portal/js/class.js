@@ -5,6 +5,7 @@ const CAM_FPS_KEY = "esp32_cam_fps";
 const ACTIVE_KEY = "active_assignment";
 
 const API = "/api";
+const MAX_VIDEO_UPLOAD_BYTES = 30 * 1024 * 1024;
 
 let camTimer = null;
 let camConnected = false;
@@ -25,6 +26,24 @@ function normalize(v) {
 
 function sameId(a, b) {
   return String(a) === String(b);
+}
+
+async function readResponse(res) {
+  const text = await res.text();
+
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    const plain = text
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 240);
+
+    return {
+      error: plain || `Server returned ${res.status} ${res.statusText}`
+    };
+  }
 }
 
 function seatDisplayName(seatValue) {
@@ -555,6 +574,74 @@ async function runVideoAttendance() {
   applyAiAttendanceResults(aiResults);
 }
 
+async function uploadLargeVideoViaGcs(file) {
+  const ticketRes = await fetch(`${API}/attendance/gcs-upload-url`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      filename: file.name,
+      content_type: file.type || "application/octet-stream"
+    })
+  });
+
+  const ticket = await readResponse(ticketRes);
+
+  if (!ticketRes.ok || !ticket.success) {
+    throw new Error(ticket.error || "Could not prepare large video upload.");
+  }
+
+  const uploadRes = await fetch(ticket.upload_url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": file.type || "application/octet-stream"
+    },
+    body: file
+  });
+
+  if (!uploadRes.ok) {
+    const uploadError = await readResponse(uploadRes);
+    throw new Error(uploadError.error || "Large video upload failed.");
+  }
+
+  const processRes = await fetch(`${API}/attendance/process-gcs-video`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      object_name: ticket.object_name
+    })
+  });
+
+  const data = await readResponse(processRes);
+
+  if (!processRes.ok || !data.success) {
+    throw new Error(data.error || "AI processing failed.");
+  }
+
+  return data;
+}
+
+async function uploadSmallVideoDirectly(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(`${API}/attendance/upload`, {
+    method: "POST",
+    body: formData
+  });
+
+  const data = await readResponse(res);
+
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || "Upload failed.");
+  }
+
+  return data;
+}
+
 /* =========================================================
    SEAT MODAL
    ========================================================= */
@@ -953,20 +1040,10 @@ function wireCameraUI() {
     aiBtn.disabled = true;
     aiBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing Video...';
 
-    const formData = new FormData();
-    formData.append("file", file);
-
     try {
-      const res = await fetch(`${API}/attendance/upload`, {
-        method: "POST",
-        body: formData
-      });
-
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Upload failed.");
-      }
+      const data = file.size > MAX_VIDEO_UPLOAD_BYTES
+        ? await uploadLargeVideoViaGcs(file)
+        : await uploadSmallVideoDirectly(file);
 
       applyAiAttendanceResults(data.results || []);
       alert("Video processed successfully: " + data.filename);

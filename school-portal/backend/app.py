@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from pathlib import Path
 from datetime import datetime
+from uuid import uuid4
 import os
 import csv
 import subprocess
@@ -11,8 +12,10 @@ import secrets
 import string
 import firebase_admin
 from firebase_admin import firestore
+from google.cloud import storage
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
+from werkzeug.exceptions import RequestEntityTooLarge
 
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = BASE_DIR.parent
@@ -23,11 +26,14 @@ ATT_CSV = OUTPUT_ATT / "attendance.csv"
 MASTER_CSV = OUTPUT_ATT / "master_attendance.csv"
 VIDEO_UPLOAD_DIR = ROOT / "data" / "classroom_videos"
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(30 * 1024 * 1024)))
+GCS_VIDEO_BUCKET = os.getenv("GCS_VIDEO_BUCKET", "").strip()
 
 load_dotenv(BASE_DIR / ".env")
 load_dotenv()
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # Firestore default credentials: works in Cloud Shell and Cloud Run
@@ -35,6 +41,7 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app()
 
 db = firestore.client()
+storage_client = storage.Client()
 print("[OK] Connected to Firestore")
 
 
@@ -129,6 +136,52 @@ def clear_uploaded_videos():
             path.unlink()
 
 
+def run_ai_attendance():
+    script_path = ROOT / "scripts" / "run_attendance_arcface.py"
+
+    if not script_path.exists():
+        return None, ("AI runner script is missing", 500)
+
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script_path)],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=int(os.getenv("AI_ATTENDANCE_TIMEOUT", "600"))
+        )
+    except subprocess.TimeoutExpired:
+        return None, ("AI processing timed out. Try a shorter video or increase Cloud Run timeout.", 504)
+
+    if result.returncode != 0:
+        return result, ("AI processing failed", 500)
+
+    return result, None
+
+
+def save_uploaded_video_from_gcs(object_name):
+    if not GCS_VIDEO_BUCKET:
+        raise RuntimeError("GCS_VIDEO_BUCKET is not configured.")
+
+    clear_uploaded_videos()
+
+    if ATT_CSV.exists():
+        ATT_CSV.unlink()
+
+    bucket = storage_client.bucket(GCS_VIDEO_BUCKET)
+    blob = bucket.blob(object_name)
+    filename = secure_filename(Path(object_name).name)
+    suffix = Path(filename).suffix.lower()
+
+    if suffix not in ALLOWED_VIDEO_EXTENSIONS:
+        raise ValueError("Unsupported video type. Upload mp4, mov, avi, or mkv.")
+
+    VIDEO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    video_path = VIDEO_UPLOAD_DIR / filename
+    blob.download_to_filename(video_path)
+    return filename
+
+
 def ensure_admin():
     _, admin = get_first("users", "username", "admin")
 
@@ -144,6 +197,15 @@ def ensure_admin():
 
 
 ensure_admin()
+
+
+@app.errorhandler(RequestEntityTooLarge)
+def uploaded_file_too_large(error):
+    max_mb = round(MAX_UPLOAD_BYTES / 1024 / 1024)
+    return jsonify({
+        "success": False,
+        "error": f"Video is too large. Please upload a video smaller than {max_mb} MB."
+    }), 413
 
 
 @app.get("/")
@@ -729,34 +791,94 @@ def upload_attendance_video():
     video_path = VIDEO_UPLOAD_DIR / filename
     uploaded.save(video_path)
 
-    script_path = ROOT / "scripts" / "run_attendance_arcface.py"
+    result, error = run_ai_attendance()
 
-    if not script_path.exists():
-        return jsonify({"success": False, "error": "AI runner script is missing"}), 500
+    if error:
+        message, status = error
+        return jsonify({
+            "success": False,
+            "filename": filename,
+            "error": message,
+            "stdout": result.stdout[-4000:] if result else "",
+            "stderr": result.stderr[-4000:] if result else ""
+        }), status
+
+    return jsonify({
+        "success": True,
+        "filename": filename,
+        "results": attendance_csv_rows(),
+        "stdout": result.stdout[-4000:]
+    })
+
+
+@app.post("/api/attendance/gcs-upload-url")
+def create_gcs_upload_url():
+    if not GCS_VIDEO_BUCKET:
+        return jsonify({
+            "success": False,
+            "error": "GCS_VIDEO_BUCKET is not configured for large video uploads."
+        }), 500
+
+    payload = request.get_json(force=True, silent=True) or {}
+    filename = secure_filename(payload.get("filename") or "")
+    content_type = payload.get("content_type") or "application/octet-stream"
+    suffix = Path(filename).suffix.lower()
+
+    if not filename or suffix not in ALLOWED_VIDEO_EXTENSIONS:
+        return jsonify({
+            "success": False,
+            "error": "Unsupported video type. Upload mp4, mov, avi, or mkv."
+        }), 400
+
+    object_name = f"attendance-uploads/{uuid4().hex}_{filename}"
+    bucket = storage_client.bucket(GCS_VIDEO_BUCKET)
+    blob = bucket.blob(object_name)
 
     try:
-        result = subprocess.run(
-            [sys.executable, str(script_path)],
-            cwd=str(ROOT),
-            capture_output=True,
-            text=True,
-            timeout=int(os.getenv("AI_ATTENDANCE_TIMEOUT", "600"))
+        upload_url = blob.generate_signed_url(
+            version="v4",
+            expiration=900,
+            method="PUT",
+            content_type=content_type
         )
-    except subprocess.TimeoutExpired:
+    except Exception as e:
         return jsonify({
             "success": False,
-            "filename": filename,
-            "error": "AI processing timed out. Try a shorter video or increase Cloud Run timeout."
-        }), 504
-
-    if result.returncode != 0:
-        return jsonify({
-            "success": False,
-            "filename": filename,
-            "error": "AI processing failed",
-            "stdout": result.stdout[-4000:],
-            "stderr": result.stderr[-4000:]
+            "error": "Could not create signed upload URL. Give the Cloud Run service account Service Account Token Creator permission.",
+            "details": str(e)
         }), 500
+
+    return jsonify({
+        "success": True,
+        "upload_url": upload_url,
+        "object_name": object_name
+    })
+
+
+@app.post("/api/attendance/process-gcs-video")
+def process_gcs_attendance_video():
+    payload = request.get_json(force=True, silent=True) or {}
+    object_name = payload.get("object_name") or ""
+
+    if not object_name.startswith("attendance-uploads/"):
+        return jsonify({"success": False, "error": "Invalid uploaded video object."}), 400
+
+    try:
+        filename = save_uploaded_video_from_gcs(object_name)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    result, error = run_ai_attendance()
+
+    if error:
+        message, status = error
+        return jsonify({
+            "success": False,
+            "filename": filename,
+            "error": message,
+            "stdout": result.stdout[-4000:] if result else "",
+            "stderr": result.stderr[-4000:] if result else ""
+        }), status
 
     return jsonify({
         "success": True,
