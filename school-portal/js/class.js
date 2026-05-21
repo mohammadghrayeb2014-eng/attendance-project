@@ -575,16 +575,22 @@ async function runVideoAttendance() {
 }
 
 async function uploadLargeVideoViaGcs(file) {
-  const ticketRes = await fetch(`${API}/attendance/gcs-upload-url`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      filename: file.name,
-      content_type: file.type || "application/octet-stream"
-    })
-  });
+  let ticketRes;
+
+  try {
+    ticketRes = await fetch(`${API}/attendance/gcs-upload-url`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        filename: file.name,
+        content_type: file.type || "application/octet-stream"
+      })
+    });
+  } catch (err) {
+    throw new Error(`Could not contact upload service. ${err.message}`);
+  }
 
   const ticket = await readResponse(ticketRes);
 
@@ -593,13 +599,22 @@ async function uploadLargeVideoViaGcs(file) {
     throw new Error(`${ticket.error || "Could not prepare large video upload."}${detail}`);
   }
 
-  const uploadRes = await fetch(ticket.upload_url, {
-    method: "PUT",
-    headers: {
-      "Content-Type": file.type || "application/octet-stream"
-    },
-    body: file
-  });
+  let uploadRes;
+
+  try {
+    uploadRes = await fetch(ticket.upload_url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": file.type || "application/octet-stream"
+      },
+      body: file
+    });
+  } catch (err) {
+    throw new Error(
+      `Cloud Storage upload could not be reached. ${err.message}. ` +
+      "Check the bucket CORS policy allows PUT from this site."
+    );
+  }
 
   if (!uploadRes.ok) {
     const uploadText = await uploadRes.text();
@@ -609,15 +624,21 @@ async function uploadLargeVideoViaGcs(file) {
     );
   }
 
-  const processRes = await fetch(`${API}/attendance/process-gcs-video`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      object_name: ticket.object_name
-    })
-  });
+  let processRes;
+
+  try {
+    processRes = await fetch(`${API}/attendance/process-gcs-video`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        object_name: ticket.object_name
+      })
+    });
+  } catch (err) {
+    throw new Error(`Could not start AI video processing. ${err.message}`);
+  }
 
   const data = await readResponse(processRes);
 
@@ -633,10 +654,16 @@ async function uploadSmallVideoDirectly(file) {
   const formData = new FormData();
   formData.append("file", file);
 
-  const res = await fetch(`${API}/attendance/upload`, {
-    method: "POST",
-    body: formData
-  });
+  let res;
+
+  try {
+    res = await fetch(`${API}/attendance/upload`, {
+      method: "POST",
+      body: formData
+    });
+  } catch (err) {
+    throw new Error(`Could not upload video to the server. ${err.message}`);
+  }
 
   const data = await readResponse(res);
 

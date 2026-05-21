@@ -260,7 +260,10 @@ def ensure_admin():
         print("[INIT] Created default admin: admin / admin123")
 
 
-ensure_admin()
+try:
+    ensure_admin()
+except Exception:
+    app.logger.exception("Could not verify default admin during startup")
 
 
 @app.errorhandler(RequestEntityTooLarge)

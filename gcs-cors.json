@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["https://attendance-project-658261917181.asia-southeast1.run.app"],
+    "method": ["PUT", "OPTIONS"],
+    "responseHeader": ["Content-Type"],
+    "maxAgeSeconds": 3600
+  }
+]
