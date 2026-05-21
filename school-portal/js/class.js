@@ -438,122 +438,121 @@ async function loadHistory() {
 }
 
 /* =========================================================
-   AI RESULT LOADER FOR PUBLIC DEMO
+   AI VIDEO ATTENDANCE
    ========================================================= */
 
-async function runVideoAttendance() {
-  const btn = $("runAiBtn");
+function applyAiAttendanceResults(aiResults) {
   const statusBody = $("attendanceBody");
 
-  btn.disabled = true;
-  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Loading AI Result...';
+  if (!Array.isArray(aiResults)) {
+    throw new Error("AI response did not include attendance results.");
+  }
 
-  try {
-    const res = await fetch(`${API}/attendance/latest-ai-result`);
-    const aiResults = await res.json();
+  const rows = statusBody.querySelectorAll("tr");
 
-    if (!res.ok) {
-      throw new Error(aiResults.error || "Failed to load AI attendance result");
-    }
+  let totalConfidence = 0;
+  let matchedStudents = 0;
 
-    const rows = statusBody.querySelectorAll("tr");
+  rows.forEach(tr => {
+    const cells = tr.querySelectorAll("td");
 
-    let totalConfidence = 0;
-    let matchedStudents = 0;
+    if (cells.length < 4) return;
 
-    rows.forEach(tr => {
-      const cells = tr.querySelectorAll("td");
+    const studentName = normalize(cells[1].textContent);
+    const studentUsername = normalize(cells[1].dataset.username);
 
-      if (cells.length < 4) return;
+    const accuracyCell = tr.querySelector(".accuracy-cell");
+    const statusTag = cells[3].querySelector(".tag");
+    const actionBtn = tr.querySelector("button");
 
-      const studentName = normalize(cells[1].textContent);
-      const studentUsername = normalize(cells[1].dataset.username);
+    if (!studentName || !accuracyCell || !statusTag) return;
 
-      const accuracyCell = tr.querySelector(".accuracy-cell");
-      const statusTag = cells[3].querySelector(".tag");
-      const actionBtn = tr.querySelector("button");
+    const aiRecord = aiResults.find(r =>
+      normalize(r.name) === studentName ||
+      normalize(r.name) === studentUsername ||
+      normalize(r.username) === studentUsername ||
+      normalize(r.username) === studentName
+    );
 
-      if (!studentName || !accuracyCell || !statusTag) return;
+    const isPresent = aiRecord && (
+      aiRecord.present === "YES" ||
+      aiRecord.status === "Present"
+    );
 
-      const aiRecord = aiResults.find(r =>
-        normalize(r.name) === studentName ||
-        normalize(r.username) === studentUsername
+    if (isPresent) {
+      const confidence = parseFloat(
+        aiRecord.accuracy ||
+        aiRecord.avg_confidence ||
+        aiRecord.confidence ||
+        90
       );
 
-      if (aiRecord && (aiRecord.present === "YES" || aiRecord.status === "Present")) {
-        const confidence = parseFloat(
-          aiRecord.accuracy ||
-          aiRecord.avg_confidence ||
-          aiRecord.confidence ||
-          90
-        );
+      accuracyCell.innerHTML = `
+        <span class="status status-ok" style="font-size: 0.7rem;">
+          ${Math.round(confidence)}% Match
+        </span>
+      `;
 
-        accuracyCell.innerHTML = `
-          <span class="status status-ok" style="font-size: 0.7rem;">
-            ${Math.round(confidence)}% Match
-          </span>
-        `;
+      statusTag.textContent = "Present";
+      statusTag.className = "tag tag-present";
 
-        statusTag.textContent = "Present";
-        statusTag.className = "tag tag-present";
-
-        if (actionBtn) {
-          actionBtn.textContent = "Mark Absent";
-        }
-
-        totalConfidence += confidence;
-        matchedStudents++;
-
-      } else {
-        accuracyCell.innerHTML = `
-          <span class="status status-inactive" style="font-size: 0.7rem; opacity: 0.6;">
-            No Match
-          </span>
-        `;
-
-        statusTag.textContent = "Absent";
-        statusTag.className = "tag tag-absent";
-
-        if (actionBtn) {
-          actionBtn.textContent = "Mark Present";
-        }
+      if (actionBtn) {
+        actionBtn.textContent = "Mark Absent";
       }
-    });
 
-    const accBox = $("accuracyBox");
+      totalConfidence += confidence;
+      matchedStudents++;
 
-    if (matchedStudents > 0) {
-      const avgConfidence = totalConfidence / matchedStudents;
-
-      accBox.innerHTML = `
-        <div class="accuracy-card">
-          <div>
-            <div class="accuracy-label">AI Model Performance</div>
-            <div style="font-size: 0.8rem; color: var(--text-secondary);">
-              Loaded from processed AI attendance result
-            </div>
-          </div>
-          <div class="accuracy-value">${avgConfidence.toFixed(1)}%</div>
-        </div>
-      `;
     } else {
-      accBox.innerHTML = `
-        <div class="tag tag-absent">
-          No students matched by AI
-        </div>
+      accuracyCell.innerHTML = `
+        <span class="status status-inactive" style="font-size: 0.7rem; opacity: 0.6;">
+          No Match
+        </span>
       `;
+
+      statusTag.textContent = "Absent";
+      statusTag.className = "tag tag-absent";
+
+      if (actionBtn) {
+        actionBtn.textContent = "Mark Present";
+      }
     }
+  });
 
-    alert("AI attendance result loaded successfully.");
+  const accBox = $("accuracyBox");
 
-  } catch (e) {
-    console.error("AI Result Error:", e);
-    alert("AI Error: " + e.message);
+  if (matchedStudents > 0) {
+    const avgConfidence = totalConfidence / matchedStudents;
 
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fa-solid fa-robot"></i> Load AI Attendance Result';
+    accBox.innerHTML = `
+      <div class="accuracy-card">
+        <div>
+          <div class="accuracy-label">AI Model Performance</div>
+          <div style="font-size: 0.8rem; color: var(--text-secondary);">
+            Processed from uploaded video
+          </div>
+        </div>
+        <div class="accuracy-value">${avgConfidence.toFixed(1)}%</div>
+      </div>
+    `;
+  } else {
+    accBox.innerHTML = `
+      <div class="tag tag-absent">
+        No seated students matched by AI
+      </div>
+    `;
   }
+}
+
+async function runVideoAttendance() {
+  const res = await fetch(`${API}/attendance/latest-ai-result`);
+  const aiResults = await res.json();
+
+  if (!res.ok) {
+    throw new Error(aiResults.error || "Upload and process a video first.");
+  }
+
+  applyAiAttendanceResults(aiResults);
 }
 
 /* =========================================================
@@ -936,6 +935,7 @@ function wireCameraUI() {
     }
   });
 
+  $("runAiBtn").addEventListener("click", () => $("videoUpload").click());
   $("uploadTriggerBtn").addEventListener("click", () => $("videoUpload").click());
 
   $("videoUpload").addEventListener("change", async (e) => {
@@ -944,10 +944,14 @@ function wireCameraUI() {
     if (!file) return;
 
     const btn = $("uploadTriggerBtn");
+    const aiBtn = $("runAiBtn");
     const originalHtml = btn.innerHTML;
+    const originalAiHtml = aiBtn.innerHTML;
 
     btn.disabled = true;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    aiBtn.disabled = true;
+    aiBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing Video...';
 
     const formData = new FormData();
     formData.append("file", file);
@@ -964,8 +968,8 @@ function wireCameraUI() {
         throw new Error(data.error || "Upload failed.");
       }
 
+      applyAiAttendanceResults(data.results || []);
       alert("Video processed successfully: " + data.filename);
-      await runVideoAttendance();
 
     } catch (err) {
       console.error("Upload error:", err);
@@ -974,6 +978,8 @@ function wireCameraUI() {
     } finally {
       btn.disabled = false;
       btn.innerHTML = originalHtml;
+      aiBtn.disabled = false;
+      aiBtn.innerHTML = originalAiHtml;
       e.target.value = "";
     }
   });

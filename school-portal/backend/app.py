@@ -699,15 +699,7 @@ def latest_ai_result():
     if rows:
         return jsonify(rows)
 
-    return jsonify([
-        {"name": "ali", "present": "YES", "accuracy": 96},
-        {"name": "abbass", "present": "YES", "accuracy": 94},
-        {"name": "abbass1", "present": "YES", "accuracy": 91},
-        {"name": "hassan", "present": "YES", "accuracy": 93},
-        {"name": "karim", "present": "YES", "accuracy": 95},
-        {"name": "mohammad", "present": "YES", "accuracy": 97},
-        {"name": "sajed", "present": "YES", "accuracy": 92}
-    ])
+    return jsonify({"error": "No processed AI attendance result. Upload a video first."}), 404
 
 
 @app.post("/api/attendance/upload")
@@ -730,6 +722,9 @@ def upload_attendance_video():
         }), 400
 
     clear_uploaded_videos()
+
+    if ATT_CSV.exists():
+        ATT_CSV.unlink()
 
     video_path = VIDEO_UPLOAD_DIR / filename
     uploaded.save(video_path)
