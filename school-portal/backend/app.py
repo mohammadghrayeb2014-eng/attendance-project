@@ -183,9 +183,26 @@ def run_ai_attendance():
         return None, ("AI processing timed out. Try a shorter video or increase Cloud Run timeout.", 504)
 
     if result.returncode != 0:
+        app.logger.error(
+            "AI attendance failed with code %s\nSTDOUT:\n%s\nSTDERR:\n%s",
+            result.returncode,
+            result.stdout[-4000:],
+            result.stderr[-4000:]
+        )
         return result, ("AI processing failed", 500)
 
     return result, None
+
+
+def ai_failure_details(result):
+    if not result:
+        return ""
+
+    stderr = (result.stderr or "").strip()
+    stdout = (result.stdout or "").strip()
+    detail = stderr or stdout
+
+    return detail[-1200:]
 
 
 def save_uploaded_video_from_gcs(object_name):
@@ -913,6 +930,7 @@ def upload_attendance_video():
             "success": False,
             "filename": filename,
             "error": message,
+            "details": ai_failure_details(result),
             "stdout": result.stdout[-4000:] if result else "",
             "stderr": result.stderr[-4000:] if result else ""
         }), status
@@ -1002,6 +1020,7 @@ def process_gcs_attendance_video():
             "success": False,
             "filename": filename,
             "error": message,
+            "details": ai_failure_details(result),
             "stdout": result.stdout[-4000:] if result else "",
             "stderr": result.stderr[-4000:] if result else ""
         }), status

@@ -43,10 +43,19 @@ DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
 # ===== CONFIG =====
 MODEL_NAME = "ArcFace"
-DETECTOR_BACKEND = "retinaface"
+DETECTOR_BACKEND = os.getenv("AI_DETECTOR_BACKEND", "opencv").strip() or "opencv"
 THRESHOLD = 0.75  # Cosine distance threshold
-PROCESS_EVERY_N_FRAMES = 3
+PROCESS_EVERY_N_FRAMES = int(os.getenv("AI_PROCESS_EVERY_N_FRAMES", "6"))
 MIN_HITS = 1
+MAX_FRAME_WIDTH = int(os.getenv("AI_MAX_FRAME_WIDTH", "1280"))
+
+print(
+    "AI config:",
+    f"model={MODEL_NAME}",
+    f"detector={DETECTOR_BACKEND}",
+    f"every_n_frames={PROCESS_EVERY_N_FRAMES}",
+    f"max_frame_width={MAX_FRAME_WIDTH}"
+)
 
 # ===== LOAD VIDEO =====
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
@@ -127,6 +136,14 @@ def run():
         frame_idx += 1
         if frame_idx % PROCESS_EVERY_N_FRAMES != 0:
             continue
+
+        if MAX_FRAME_WIDTH > 0 and frame.shape[1] > MAX_FRAME_WIDTH:
+            scale = MAX_FRAME_WIDTH / frame.shape[1]
+            frame = cv2.resize(
+                frame,
+                (MAX_FRAME_WIDTH, int(frame.shape[0] * scale)),
+                interpolation=cv2.INTER_AREA
+            )
 
         if frame_idx % 300 == 0:
             print(f"  Processing: {frame_idx}/{total_frames}")
