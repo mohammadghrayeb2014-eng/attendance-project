@@ -10,4 +10,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD exec gunicorn --chdir school-portal/backend --bind 0.0.0.0:${PORT:-8080} app:app
+CMD exec gunicorn --chdir school-portal/backend --bind 0.0.0.0:${PORT:-8080} --timeout ${GUNICORN_TIMEOUT:-900} app:app
