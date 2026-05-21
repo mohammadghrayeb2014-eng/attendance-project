@@ -224,6 +224,24 @@ def cloud_run_signing_identity():
     return service_account_email, access_token
 
 
+def signed_url_error_details(error):
+    details = str(error)
+
+    if "signBlob" in details or "iam.serviceAccounts" in details:
+        return (
+            f"{details} Grant the Cloud Run service account "
+            "roles/iam.serviceAccountTokenCreator so it can sign upload URLs."
+        )
+
+    if "storage.objects" in details or "does not have storage" in details:
+        return (
+            f"{details} Grant the Cloud Run service account Storage Object Admin "
+            "or Storage Object Creator on the upload bucket."
+        )
+
+    return details
+
+
 def ensure_admin():
     _, admin = get_first("users", "username", "admin")
 
@@ -942,10 +960,11 @@ def create_gcs_upload_url():
             access_token=access_token
         )
     except Exception as e:
+        app.logger.exception("Could not create GCS signed upload URL")
         return jsonify({
             "success": False,
             "error": "Could not create signed upload URL.",
-            "details": str(e)
+            "details": signed_url_error_details(e)
         }), 500
 
     return jsonify({

@@ -589,7 +589,8 @@ async function uploadLargeVideoViaGcs(file) {
   const ticket = await readResponse(ticketRes);
 
   if (!ticketRes.ok || !ticket.success) {
-    throw new Error(ticket.error || "Could not prepare large video upload.");
+    const detail = ticket.details ? ` ${ticket.details}` : "";
+    throw new Error(`${ticket.error || "Could not prepare large video upload."}${detail}`);
   }
 
   const uploadRes = await fetch(ticket.upload_url, {
@@ -621,7 +622,8 @@ async function uploadLargeVideoViaGcs(file) {
   const data = await readResponse(processRes);
 
   if (!processRes.ok || !data.success) {
-    throw new Error(data.error || "AI processing failed.");
+    const detail = data.details ? ` ${data.details}` : "";
+    throw new Error(`${data.error || "AI processing failed."}${detail}`);
   }
 
   return data;
@@ -639,7 +641,8 @@ async function uploadSmallVideoDirectly(file) {
   const data = await readResponse(res);
 
   if (!res.ok || !data.success) {
-    throw new Error(data.error || "Upload failed.");
+    const detail = data.details ? ` ${data.details}` : "";
+    throw new Error(`${data.error || "Upload failed."}${detail}`);
   }
 
   return data;
