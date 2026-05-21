@@ -25,6 +25,9 @@ BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = BASE_DIR.parent
 ROOT = FRONTEND_DIR.parent
 
+load_dotenv(BASE_DIR / ".env")
+load_dotenv()
+
 OUTPUT_ATT = ROOT / "output" / "attendance"
 ATT_CSV = OUTPUT_ATT / "attendance.csv"
 MASTER_CSV = OUTPUT_ATT / "master_attendance.csv"
@@ -33,9 +36,6 @@ ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(30 * 1024 * 1024)))
 GCS_VIDEO_BUCKET = os.getenv("GCS_VIDEO_BUCKET", "").strip()
 METADATA_HEADERS = {"Metadata-Flavor": "Google"}
-
-load_dotenv(BASE_DIR / ".env")
-load_dotenv()
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
@@ -91,6 +91,26 @@ def get_first(collection, field, value):
 
 def docs_to_list(collection):
     return [doc.to_dict() for doc in db.collection(collection).stream()]
+
+
+def normalized_gcs_bucket_name():
+    bucket = GCS_VIDEO_BUCKET.strip()
+
+    if bucket.startswith("gs://"):
+        bucket = bucket[5:]
+
+    if bucket.startswith("https://storage.googleapis.com/"):
+        bucket = bucket.removeprefix("https://storage.googleapis.com/")
+
+    bucket = bucket.split("/", 1)[0].strip()
+
+    if not bucket:
+        return ""
+
+    if bucket[0] in ".-" or bucket[-1] in ".-":
+        raise ValueError("GCS_VIDEO_BUCKET must be a bucket name, not a URL or path.")
+
+    return bucket
 
 
 def attendance_csv_rows():
@@ -165,7 +185,9 @@ def run_ai_attendance():
 
 
 def save_uploaded_video_from_gcs(object_name):
-    if not GCS_VIDEO_BUCKET:
+    bucket_name = normalized_gcs_bucket_name()
+
+    if not bucket_name:
         raise RuntimeError("GCS_VIDEO_BUCKET is not configured.")
 
     clear_uploaded_videos()
@@ -173,7 +195,7 @@ def save_uploaded_video_from_gcs(object_name):
     if ATT_CSV.exists():
         ATT_CSV.unlink()
 
-    bucket = storage_client.bucket(GCS_VIDEO_BUCKET)
+    bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(object_name)
     filename = secure_filename(Path(object_name).name)
     suffix = Path(filename).suffix.lower()
@@ -880,7 +902,15 @@ def upload_attendance_video():
 
 @app.post("/api/attendance/gcs-upload-url")
 def create_gcs_upload_url():
-    if not GCS_VIDEO_BUCKET:
+    try:
+        bucket_name = normalized_gcs_bucket_name()
+    except ValueError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+    if not bucket_name:
         return jsonify({
             "success": False,
             "error": "GCS_VIDEO_BUCKET is not configured for large video uploads."
@@ -898,10 +928,10 @@ def create_gcs_upload_url():
         }), 400
 
     object_name = f"attendance-uploads/{uuid4().hex}_{filename}"
-    bucket = storage_client.bucket(GCS_VIDEO_BUCKET)
-    blob = bucket.blob(object_name)
 
     try:
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(object_name)
         service_account_email, access_token = cloud_run_signing_identity()
         upload_url = blob.generate_signed_url(
             version="v4",
