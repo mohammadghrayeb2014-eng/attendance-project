@@ -34,16 +34,19 @@ if not MONGO_URI:
 
 mongo_client = MongoClient(
     MONGO_URI,
-    serverSelectionTimeoutMS=10000,
+    serverSelectionTimeoutMS=30000,
     tlsCAFile=certifi.where()
 )
 
-mongo_client.admin.command("ping")
 db = mongo_client[MONGO_DB_NAME]
 
-print(f"[OK] Connected to MongoDB database: {MONGO_DB_NAME}")
-
-
+try:
+    mongo_client.admin.command("ping")
+    print(f"[OK] Connected to MongoDB database: {MONGO_DB_NAME}")
+except Exception as e:
+    print("[ERROR] MongoDB connection failed:")
+    print(e)
+    raise RuntimeError("Cannot connect to MongoDB. Check Atlas cluster, URI, user/password, or network.")
 def clean_doc(doc):
     if doc:
         doc.pop("_id", None)
