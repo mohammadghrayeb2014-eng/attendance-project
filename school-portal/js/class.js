@@ -964,7 +964,8 @@ function wireCameraUI() {
         throw new Error(data.error || "Upload failed.");
       }
 
-      alert("Video uploaded successfully: " + data.filename);
+      alert("Video processed successfully: " + data.filename);
+      await runVideoAttendance();
 
     } catch (err) {
       console.error("Upload error:", err);

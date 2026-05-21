@@ -3,12 +3,16 @@ from flask_cors import CORS
 from pathlib import Path
 from datetime import datetime
 import os
+import csv
+import subprocess
+import sys
 import bcrypt
 import secrets
 import string
 import firebase_admin
 from firebase_admin import firestore
 from dotenv import load_dotenv
+from werkzeug.utils import secure_filename
 
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = BASE_DIR.parent
@@ -17,6 +21,8 @@ ROOT = FRONTEND_DIR.parent
 OUTPUT_ATT = ROOT / "output" / "attendance"
 ATT_CSV = OUTPUT_ATT / "attendance.csv"
 MASTER_CSV = OUTPUT_ATT / "master_attendance.csv"
+VIDEO_UPLOAD_DIR = ROOT / "data" / "classroom_videos"
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
 
 load_dotenv(BASE_DIR / ".env")
 load_dotenv()
@@ -73,6 +79,54 @@ def get_first(collection, field, value):
 
 def docs_to_list(collection):
     return [doc.to_dict() for doc in db.collection(collection).stream()]
+
+
+def attendance_csv_rows():
+    if not ATT_CSV.exists():
+        return []
+
+    with ATT_CSV.open("r", encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+
+    results = []
+
+    for row in rows:
+        present = str(row.get("present") or "").strip().upper()
+        raw_confidence = row.get("avg_confidence") or row.get("confidence") or ""
+
+        try:
+            confidence = float(raw_confidence)
+            if confidence <= 1:
+                accuracy = round((1 - confidence) * 100, 1)
+            else:
+                accuracy = round(confidence, 1)
+        except Exception:
+            accuracy = None
+
+        item = {
+            "date": row.get("date"),
+            "name": row.get("name"),
+            "username": normalize_username(row.get("name")),
+            "present": present,
+            "status": "Present" if present == "YES" else "Absent",
+            "hits": row.get("hits"),
+            "avg_confidence": raw_confidence
+        }
+
+        if accuracy is not None:
+            item["accuracy"] = accuracy
+
+        results.append(item)
+
+    return results
+
+
+def clear_uploaded_videos():
+    VIDEO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    for path in VIDEO_UPLOAD_DIR.iterdir():
+        if path.is_file() and path.suffix.lower() in ALLOWED_VIDEO_EXTENSIONS:
+            path.unlink()
 
 
 def ensure_admin():
@@ -640,6 +694,11 @@ def save_attendance():
 
 @app.get("/api/attendance/latest-ai-result")
 def latest_ai_result():
+    rows = attendance_csv_rows()
+
+    if rows:
+        return jsonify(rows)
+
     return jsonify([
         {"name": "ali", "present": "YES", "accuracy": 96},
         {"name": "abbass", "present": "YES", "accuracy": 94},
@@ -649,6 +708,67 @@ def latest_ai_result():
         {"name": "mohammad", "present": "YES", "accuracy": 97},
         {"name": "sajed", "present": "YES", "accuracy": 92}
     ])
+
+
+@app.post("/api/attendance/upload")
+def upload_attendance_video():
+    if "file" not in request.files:
+        return jsonify({"success": False, "error": "No video file uploaded"}), 400
+
+    uploaded = request.files["file"]
+
+    if not uploaded or not uploaded.filename:
+        return jsonify({"success": False, "error": "No video file selected"}), 400
+
+    filename = secure_filename(uploaded.filename)
+    suffix = Path(filename).suffix.lower()
+
+    if suffix not in ALLOWED_VIDEO_EXTENSIONS:
+        return jsonify({
+            "success": False,
+            "error": "Unsupported video type. Upload mp4, mov, avi, or mkv."
+        }), 400
+
+    clear_uploaded_videos()
+
+    video_path = VIDEO_UPLOAD_DIR / filename
+    uploaded.save(video_path)
+
+    script_path = ROOT / "scripts" / "run_attendance_arcface.py"
+
+    if not script_path.exists():
+        return jsonify({"success": False, "error": "AI runner script is missing"}), 500
+
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script_path)],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=int(os.getenv("AI_ATTENDANCE_TIMEOUT", "600"))
+        )
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "filename": filename,
+            "error": "AI processing timed out. Try a shorter video or increase Cloud Run timeout."
+        }), 504
+
+    if result.returncode != 0:
+        return jsonify({
+            "success": False,
+            "filename": filename,
+            "error": "AI processing failed",
+            "stdout": result.stdout[-4000:],
+            "stderr": result.stderr[-4000:]
+        }), 500
+
+    return jsonify({
+        "success": True,
+        "filename": filename,
+        "results": attendance_csv_rows(),
+        "stdout": result.stdout[-4000:]
+    })
 
 
 @app.get("/api/reports/attendance")
