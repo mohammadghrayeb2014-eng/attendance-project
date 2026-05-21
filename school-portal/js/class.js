@@ -601,8 +601,11 @@ async function uploadLargeVideoViaGcs(file) {
   });
 
   if (!uploadRes.ok) {
-    const uploadError = await readResponse(uploadRes);
-    throw new Error(uploadError.error || "Large video upload failed.");
+    const uploadText = await uploadRes.text();
+    throw new Error(
+      `Cloud Storage upload failed (${uploadRes.status}). ` +
+      uploadText.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300)
+    );
   }
 
   const processRes = await fetch(`${API}/attendance/process-gcs-video`, {

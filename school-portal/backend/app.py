@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
 from pathlib import Path
 from datetime import datetime
 from uuid import uuid4
@@ -225,6 +226,23 @@ def uploaded_file_too_large(error):
         "success": False,
         "error": f"Video is too large. Please upload a video smaller than {max_mb} MB."
     }), 413
+
+
+@app.errorhandler(Exception)
+def json_error(error):
+    if isinstance(error, HTTPException):
+        return jsonify({
+            "success": False,
+            "error": error.description,
+            "status": error.code
+        }), error.code
+
+    app.logger.exception("Unhandled server error")
+    return jsonify({
+        "success": False,
+        "error": "Internal server error",
+        "details": str(error)
+    }), 500
 
 
 @app.get("/")
