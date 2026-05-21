@@ -10,6 +10,11 @@ cc/
 data/
 output/
 models/
+!models/
+models/*
+!models/arcface_embeddings.pkl
+!models/face_yunet.onnx
+!models/labels.json
 classroom_videos/
 yolov8n.pt
 *.zip
