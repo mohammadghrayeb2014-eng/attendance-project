@@ -5,8 +5,11 @@ from datetime import datetime
 from uuid import uuid4
 import os
 import csv
+import json
+import pickle
 import subprocess
 import sys
+import urllib.request
 import bcrypt
 import secrets
 import string
@@ -28,6 +31,7 @@ VIDEO_UPLOAD_DIR = ROOT / "data" / "classroom_videos"
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(30 * 1024 * 1024)))
 GCS_VIDEO_BUCKET = os.getenv("GCS_VIDEO_BUCKET", "").strip()
+METADATA_HEADERS = {"Metadata-Flavor": "Google"}
 
 load_dotenv(BASE_DIR / ".env")
 load_dotenv()
@@ -182,6 +186,21 @@ def save_uploaded_video_from_gcs(object_name):
     return filename
 
 
+def metadata_value(path):
+    url = f"http://metadata.google.internal/computeMetadata/v1/{path}"
+    req = urllib.request.Request(url, headers=METADATA_HEADERS)
+
+    with urllib.request.urlopen(req, timeout=10) as res:
+        return res.read().decode("utf-8")
+
+
+def cloud_run_signing_identity():
+    service_account_email = metadata_value("instance/service-accounts/default/email")
+    token_json = metadata_value("instance/service-accounts/default/token")
+    access_token = json.loads(token_json)["access_token"]
+    return service_account_email, access_token
+
+
 def ensure_admin():
     _, admin = get_first("users", "username", "admin")
 
@@ -254,6 +273,36 @@ def health():
         "status": "ok",
         "storage": "firestore"
     })
+
+
+@app.get("/api/ai/status")
+def ai_status():
+    model_path = ROOT / "models" / "arcface_embeddings.pkl"
+    runner_path = ROOT / "scripts" / "run_attendance_arcface.py"
+
+    status = {
+        "ok": model_path.exists() and runner_path.exists(),
+        "model": str(model_path.relative_to(ROOT)),
+        "model_exists": model_path.exists(),
+        "runner_exists": runner_path.exists(),
+        "known_students": []
+    }
+
+    if model_path.exists():
+        try:
+            with model_path.open("rb") as f:
+                known_data = pickle.load(f)
+            status["known_students"] = sorted({
+                str(item.get("name", "")).strip()
+                for item in known_data
+                if item.get("name")
+            })
+            status["embedding_count"] = len(known_data)
+        except Exception as e:
+            status["ok"] = False
+            status["error"] = str(e)
+
+    return jsonify(status), 200 if status["ok"] else 500
 
 
 @app.post("/api/login")
@@ -835,16 +884,19 @@ def create_gcs_upload_url():
     blob = bucket.blob(object_name)
 
     try:
+        service_account_email, access_token = cloud_run_signing_identity()
         upload_url = blob.generate_signed_url(
             version="v4",
             expiration=900,
             method="PUT",
-            content_type=content_type
+            content_type=content_type,
+            service_account_email=service_account_email,
+            access_token=access_token
         )
     except Exception as e:
         return jsonify({
             "success": False,
-            "error": "Could not create signed upload URL. Give the Cloud Run service account Service Account Token Creator permission.",
+            "error": "Could not create signed upload URL.",
             "details": str(e)
         }), 500
 

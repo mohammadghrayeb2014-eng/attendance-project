@@ -2,7 +2,6 @@ import cv2
 import pickle
 import numpy as np
 import pandas as pd
-from deepface import DeepFace
 from pathlib import Path
 from datetime import datetime
 import sys
@@ -11,6 +10,10 @@ import os
 # Fix Windows console encoding
 if sys.platform == 'win32':
     os.system('chcp 65001 > nul')
+
+os.environ.setdefault("DEEPFACE_HOME", str(Path("/tmp/deepface")))
+
+from deepface import DeepFace
 
 # ===== PATHS =====
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -30,9 +33,13 @@ MIN_HITS = 1 # Reverted to 1 hit for verification
 # TARGET_HEIGHT = 720
 
 # ===== LOAD VIDEO =====
-VIDEO_CANDIDATES = sorted(list(VIDEO_DIR.glob("*.mp4")) + list(VIDEO_DIR.glob("*.mov")) + list(VIDEO_DIR.glob("*.avi")))
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
+VIDEO_CANDIDATES = sorted(
+    p for p in VIDEO_DIR.iterdir()
+    if p.is_file() and p.suffix.lower() in VIDEO_EXTENSIONS
+)
 if not VIDEO_CANDIDATES:
-    print("No video found")
+    print(f"No video found in {VIDEO_DIR}")
     sys.exit(1)
 
 VIDEO_PATH = str(VIDEO_CANDIDATES[0])
@@ -45,6 +52,12 @@ if not PKL_PATH.exists():
 
 with open(PKL_PATH, "rb") as f:
     known_data = pickle.load(f)
+
+if not known_data:
+    print("Embeddings file is empty. Run training first.")
+    sys.exit(1)
+
+print("Known students:", ", ".join(sorted({item["name"] for item in known_data})))
 
 def find_matches(frame_face_embedding):
     best_name = "Unknown"
@@ -63,6 +76,10 @@ def find_matches(frame_face_embedding):
 
 def run():
     cap = cv2.VideoCapture(VIDEO_PATH)
+    if not cap.isOpened():
+        print(f"Could not open video: {VIDEO_PATH}")
+        sys.exit(1)
+
     fps = cap.get(cv2.CAP_PROP_FPS) or 30
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     
@@ -71,6 +88,8 @@ def run():
     
     frame_idx = 0
     saved = 0
+    failures = 0
+    first_error = None
     run_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     while True:
@@ -120,10 +139,20 @@ def run():
                 cv2.imwrite(str(DEBUG_DIR / f"arcface_debug_{frame_idx}.jpg"), frame)
                 saved += 1
                 
-        except Exception:
+        except Exception as e:
+            failures += 1
+            if first_error is None:
+                first_error = repr(e)
             continue
 
     cap.release()
+
+    if frame_idx == 0:
+        print("Video opened, but no frames were readable.")
+        sys.exit(1)
+
+    if first_error:
+        print(f"DeepFace warning: {failures} frame(s) failed. First error: {first_error}")
     
     # Generate CSV
     rows = []
