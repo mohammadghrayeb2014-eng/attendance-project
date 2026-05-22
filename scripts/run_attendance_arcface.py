@@ -52,7 +52,9 @@ PROCESS_EVERY_N_FRAMES = int(os.getenv("AI_PROCESS_EVERY_N_FRAMES", "6"))
 MIN_HITS = int(os.getenv("AI_MIN_HITS", "5"))
 MAX_FRAME_WIDTH = int(os.getenv("AI_MAX_FRAME_WIDTH", "960"))
 MIN_FACE_SCORE = float(os.getenv("AI_MIN_FACE_SCORE", "0.45"))
-MAX_FRAMES = int(os.getenv("AI_MAX_FRAMES", "0"))
+MAX_FRAMES = int(os.getenv("AI_MAX_FRAMES", "900"))
+MAX_FACES_PER_FRAME = int(os.getenv("AI_MAX_FACES_PER_FRAME", "12"))
+EXPECTED_NAMES_RAW = os.getenv("AI_EXPECTED_NAMES", "")
 
 CANONICAL = np.array([
     [38.2946, 51.6963],
@@ -71,7 +73,8 @@ print(
     f"min_hits={MIN_HITS}",
     f"max_frame_width={MAX_FRAME_WIDTH}",
     f"min_face_score={MIN_FACE_SCORE}",
-    f"max_frames={MAX_FRAMES or 'unlimited'}"
+    f"max_frames={MAX_FRAMES or 'unlimited'}",
+    f"max_faces_per_frame={MAX_FACES_PER_FRAME or 'unlimited'}"
 )
 
 # ===== LOAD VIDEO =====
@@ -103,7 +106,30 @@ if not known_data:
     print("Embeddings file is empty. Run training first.")
     sys.exit(1)
 
+
+def normalize_name(name):
+    return str(name or "").strip().lower()
+
+
+known_name_by_normalized = {
+    normalize_name(item["name"]): item["name"]
+    for item in known_data
+    if item.get("name")
+}
+expected_names = {
+    known_name_by_normalized[name]
+    for name in (normalize_name(part) for part in EXPECTED_NAMES_RAW.split(","))
+    if name in known_name_by_normalized
+}
+match_data = [
+    item for item in known_data
+    if not expected_names or item["name"] in expected_names
+]
+
 print("Known students:", ", ".join(sorted({item["name"] for item in known_data})))
+
+if expected_names:
+    print("Limiting AI matching to seated students:", ", ".join(sorted(expected_names)))
 
 
 def cosine_distance(a, b):
@@ -121,7 +147,7 @@ def find_matches(frame_face_embedding):
     best_name = "Unknown"
     min_dist = 1.0
 
-    for item in known_data:
+    for item in match_data:
         dist = cosine_distance(frame_face_embedding, item["embedding"])
         if dist < min_dist:
             min_dist = dist
@@ -160,7 +186,15 @@ def detect_faces(frame):
     height, width = frame.shape[:2]
     face_detector.setInputSize((width, height))
     _, faces = face_detector.detect(frame)
-    return [] if faces is None else faces
+
+    if faces is None:
+        return []
+
+    if MAX_FACES_PER_FRAME > 0 and len(faces) > MAX_FACES_PER_FRAME:
+        faces = sorted(faces, key=lambda face: face[-1], reverse=True)
+        faces = faces[:MAX_FACES_PER_FRAME]
+
+    return faces
 
 
 def run():
@@ -171,8 +205,8 @@ def run():
 
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    hits = {item["name"]: 0 for item in known_data}
-    confidences = {item["name"]: [] for item in known_data}
+    hits = {item["name"]: 0 for item in match_data}
+    confidences = {item["name"]: [] for item in match_data}
 
     frame_idx = 0
     saved = 0
@@ -264,6 +298,10 @@ def run():
             if saved < 20 and len(faces) > 0:
                 cv2.imwrite(str(DEBUG_DIR / f"arcface_debug_{frame_idx}.jpg"), frame)
                 saved += 1
+
+            if expected_names and all(hits.get(name, 0) >= MIN_HITS for name in expected_names):
+                print(f"Early stop: matched all {len(expected_names)} seated student(s).")
+                break
 
         except Exception as e:
             failures += 1

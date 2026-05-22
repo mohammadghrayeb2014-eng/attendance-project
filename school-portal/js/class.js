@@ -574,6 +574,119 @@ async function runVideoAttendance() {
   applyAiAttendanceResults(aiResults);
 }
 
+function currentSeatedStudentNames() {
+  return Array.from($("attendanceBody").querySelectorAll("tr"))
+    .map(tr => {
+      const cells = tr.querySelectorAll("td");
+      return cells.length >= 2 ? cells[1].textContent.trim() : "";
+    })
+    .filter(Boolean);
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function setVideoProcessingProgress(message) {
+  const text = String(message || "Processing video...");
+  const shortText = text.length > 64 ? `${text.slice(0, 61)}...` : text;
+  const aiBtn = $("runAiBtn");
+  const hint = $("camHint");
+
+  if (aiBtn) {
+    aiBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${escapeHtml(shortText)}`;
+  }
+
+  if (hint) {
+    hint.textContent = text;
+  }
+}
+
+async function processGcsVideoWithProgress(objectName) {
+  let res;
+
+  try {
+    res = await fetch(`${API}/attendance/process-gcs-video-stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        object_name: objectName,
+        expected_names: currentSeatedStudentNames()
+      })
+    });
+  } catch (err) {
+    throw new Error(`Could not start AI video processing. ${err.message}`);
+  }
+
+  if (!res.ok) {
+    const data = await readResponse(res);
+    const detail = data.details ? ` ${data.details}` : "";
+    throw new Error(`${data.error || "Could not start AI video processing."}${detail}`);
+  }
+
+  if (!res.body) {
+    throw new Error("This browser could not read the AI processing stream.");
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalData = null;
+
+  const handleLine = (line) => {
+    const clean = line.trim();
+
+    if (!clean) return;
+
+    let event;
+
+    try {
+      event = JSON.parse(clean);
+    } catch {
+      return;
+    }
+
+    if (event.type === "status") {
+      setVideoProcessingProgress(event.message || "Processing video...");
+    } else if (event.type === "error") {
+      const detail = event.details ? ` ${event.details}` : "";
+      throw new Error(`${event.error || "AI processing failed."}${detail}`);
+    } else if (event.type === "complete") {
+      finalData = event;
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+
+    if (value) {
+      buffer += decoder.decode(value, { stream: !done });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+      lines.forEach(handleLine);
+    }
+
+    if (done) break;
+  }
+
+  if (buffer.trim()) {
+    handleLine(buffer);
+  }
+
+  if (!finalData || !finalData.success) {
+    throw new Error("AI processing finished without returning attendance results.");
+  }
+
+  return finalData;
+}
+
 async function uploadLargeVideoViaGcs(file) {
   let ticketRes;
 
@@ -624,34 +737,7 @@ async function uploadLargeVideoViaGcs(file) {
     );
   }
 
-  let processRes;
-
-  try {
-    processRes = await fetch(`${API}/attendance/process-gcs-video`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        object_name: ticket.object_name
-      })
-    });
-  } catch (err) {
-    throw new Error(
-      `The video uploaded, but the AI processing request disconnected before the server returned a response. ${err.message}. ` +
-      "Try again with a shorter video, or increase the Cloud Run request timeout and memory."
-    );
-  }
-
-  const data = await readResponse(processRes);
-
-  if (!processRes.ok || !data.success) {
-    console.error("AI processing response:", data);
-    const detail = data.details ? ` ${data.details}` : "";
-    throw new Error(`${data.error || "AI processing failed."}${detail}`);
-  }
-
-  return data;
+  return processGcsVideoWithProgress(ticket.object_name);
 }
 
 async function uploadSmallVideoDirectly(file) {

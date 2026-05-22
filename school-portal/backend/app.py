@@ -1,16 +1,20 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 from pathlib import Path
 from datetime import datetime
 from uuid import uuid4
+from types import SimpleNamespace
 import os
 import csv
 import json
 import pickle
+import queue
 import re
 import subprocess
 import sys
+import threading
+import time
 import urllib.request
 import bcrypt
 import secrets
@@ -48,6 +52,7 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 storage_client = storage.Client()
+AI_PROCESS_LOCK = threading.Lock()
 print("[OK] Connected to Firestore")
 
 
@@ -178,18 +183,30 @@ def clear_uploaded_videos():
             path.unlink()
 
 
-def run_ai_attendance():
+def ai_subprocess_env(extra_env=None):
+    env = os.environ.copy()
+    env.setdefault("PYTHONUNBUFFERED", "1")
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    env.setdefault("CUDA_VISIBLE_DEVICES", "-1")
+    env.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+
+    for key, value in (extra_env or {}).items():
+        env[key] = value
+
+    return env
+
+
+def run_ai_attendance(expected_names=None):
     script_path = ROOT / "scripts" / "run_attendance_arcface.py"
 
     if not script_path.exists():
         return None, ("AI runner script is missing", 500)
 
     try:
-        env = os.environ.copy()
-        env.setdefault("PYTHONUNBUFFERED", "1")
-        env.setdefault("PYTHONIOENCODING", "utf-8")
-        env.setdefault("CUDA_VISIBLE_DEVICES", "-1")
-        env.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+        extra_env = {}
+
+        if expected_names:
+            extra_env["AI_EXPECTED_NAMES"] = ",".join(expected_names)
 
         result = subprocess.run(
             [sys.executable, str(script_path)],
@@ -197,7 +214,7 @@ def run_ai_attendance():
             capture_output=True,
             text=True,
             timeout=int(os.getenv("AI_ATTENDANCE_TIMEOUT", "840")),
-            env=env
+            env=ai_subprocess_env(extra_env)
         )
     except subprocess.TimeoutExpired:
         return None, ("AI processing timed out before the video finished. Use a shorter video or increase Cloud Run timeout.", 504)
@@ -318,6 +335,27 @@ def signed_url_error_details(error):
         )
 
     return details
+
+
+def expected_names_from_payload(payload):
+    names = payload.get("expected_names") or []
+
+    if not isinstance(names, list):
+        return []
+
+    clean_names = []
+
+    for name in names:
+        clean = str(name or "").strip()
+
+        if clean:
+            clean_names.append(clean[:120])
+
+    return clean_names[:80]
+
+
+def ndjson_event(**payload):
+    return json.dumps(payload, ensure_ascii=False) + "\n"
 
 
 def ensure_admin():
@@ -1060,6 +1098,7 @@ def create_gcs_upload_url():
 def process_gcs_attendance_video():
     payload = request.get_json(force=True, silent=True) or {}
     object_name = payload.get("object_name") or ""
+    expected_names = expected_names_from_payload(payload)
 
     if not object_name.startswith("attendance-uploads/"):
         return jsonify({"success": False, "error": "Invalid uploaded video object."}), 400
@@ -1069,7 +1108,7 @@ def process_gcs_attendance_video():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-    result, error = run_ai_attendance()
+    result, error = run_ai_attendance(expected_names)
 
     if error:
         message, status = error
@@ -1088,6 +1127,193 @@ def process_gcs_attendance_video():
         "results": attendance_csv_rows(),
         "stdout": result.stdout[-4000:]
     })
+
+
+@app.post("/api/attendance/process-gcs-video-stream")
+def process_gcs_attendance_video_stream():
+    payload = request.get_json(force=True, silent=True) or {}
+    object_name = payload.get("object_name") or ""
+    expected_names = expected_names_from_payload(payload)
+
+    if not object_name.startswith("attendance-uploads/"):
+        return jsonify({"success": False, "error": "Invalid uploaded video object."}), 400
+
+    @stream_with_context
+    def generate():
+        acquired = AI_PROCESS_LOCK.acquire(blocking=False)
+
+        if not acquired:
+            yield ndjson_event(
+                type="error",
+                success=False,
+                error="Another AI video is already processing. Please wait for it to finish."
+            )
+            return
+
+        try:
+            yield ndjson_event(type="status", message="Downloading uploaded video...")
+
+            try:
+                filename = save_uploaded_video_from_gcs(object_name)
+            except Exception as e:
+                app.logger.exception("Could not download uploaded GCS video")
+                yield ndjson_event(type="error", success=False, error=str(e))
+                return
+
+            script_path = ROOT / "scripts" / "run_attendance_arcface.py"
+
+            if not script_path.exists():
+                yield ndjson_event(type="error", success=False, error="AI runner script is missing")
+                return
+
+            yield ndjson_event(type="status", message="Starting AI video processing...")
+
+            timeout_seconds = int(os.getenv("AI_ATTENDANCE_TIMEOUT", "840"))
+            extra_env = {}
+
+            if expected_names:
+                extra_env["AI_EXPECTED_NAMES"] = ",".join(expected_names)
+
+            try:
+                process = subprocess.Popen(
+                    [sys.executable, str(script_path)],
+                    cwd=str(ROOT),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    env=ai_subprocess_env(extra_env)
+                )
+            except Exception as e:
+                app.logger.exception("Could not start AI attendance subprocess")
+                yield ndjson_event(type="error", success=False, error=f"Could not start AI processing. {e}")
+                return
+
+            output_queue = queue.Queue()
+            output_lines = []
+
+            def read_output():
+                try:
+                    for line in process.stdout:
+                        output_queue.put(line)
+                finally:
+                    output_queue.put(None)
+
+            threading.Thread(target=read_output, daemon=True).start()
+
+            started_at = time.monotonic()
+            last_status_at = 0
+            reader_done = False
+            noisy_patterns = (
+                "cuda",
+                "cudnn",
+                "cublas",
+                "cufft",
+                "tensorrt",
+                "cpu_feature_guard",
+                "tensorflow/core/platform",
+                "stream_executor"
+            )
+
+            while True:
+                elapsed = int(time.monotonic() - started_at)
+
+                if elapsed > timeout_seconds:
+                    process.kill()
+                    process.wait(timeout=5)
+                    yield ndjson_event(
+                        type="error",
+                        success=False,
+                        error="AI processing timed out before the video finished. Use a shorter video or increase Cloud Run timeout."
+                    )
+                    return
+
+                if process.poll() is not None and reader_done and output_queue.empty():
+                    break
+
+                try:
+                    item = output_queue.get(timeout=2)
+                except queue.Empty:
+                    if time.monotonic() - last_status_at >= 10:
+                        yield ndjson_event(
+                            type="status",
+                            message=f"Processing video... {elapsed}s",
+                            elapsed=elapsed
+                        )
+                        last_status_at = time.monotonic()
+                    continue
+
+                if item is None:
+                    reader_done = True
+                    continue
+
+                clean = item.strip()
+
+                if not clean:
+                    continue
+
+                output_lines.append(clean)
+                output_lines = output_lines[-200:]
+
+                lower = clean.lower()
+
+                if any(pattern in lower for pattern in noisy_patterns):
+                    continue
+
+                if time.monotonic() - last_status_at >= 2:
+                    yield ndjson_event(
+                        type="status",
+                        message=clean[:240],
+                        elapsed=elapsed
+                    )
+                    last_status_at = time.monotonic()
+
+            stdout = "\n".join(output_lines)
+
+            if process.returncode != 0:
+                result = SimpleNamespace(returncode=process.returncode, stdout=stdout, stderr="")
+                app.logger.error(
+                    "AI attendance failed with code %s\nOUTPUT:\n%s",
+                    process.returncode,
+                    stdout[-4000:]
+                )
+                yield ndjson_event(
+                    type="error",
+                    success=False,
+                    filename=filename,
+                    error="AI processing failed",
+                    details=ai_failure_details(result),
+                    stdout=stdout[-4000:],
+                    stderr=""
+                )
+                return
+
+            yield ndjson_event(
+                type="complete",
+                success=True,
+                filename=filename,
+                results=attendance_csv_rows(),
+                stdout=stdout[-4000:]
+            )
+        except Exception as e:
+            app.logger.exception("Streaming AI processing failed")
+            yield ndjson_event(
+                type="error",
+                success=False,
+                error="AI processing failed.",
+                details=str(e)
+            )
+        finally:
+            AI_PROCESS_LOCK.release()
+
+    return Response(
+        generate(),
+        mimetype="application/x-ndjson",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 
 @app.get("/api/reports/attendance")
