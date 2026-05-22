@@ -94,6 +94,26 @@ def docs_to_list(collection):
     return [doc.to_dict() for doc in db.collection(collection).stream()]
 
 
+def distance_to_match_percent(distance):
+    try:
+        distance = float(distance)
+    except Exception:
+        return None
+
+    if distance >= 1:
+        return None
+
+    # ArcFace cosine distances are not user-facing percentages. Accepted
+    # matches should read as match strength, not raw "1 - distance" math.
+    if distance <= 0.35:
+        return 99.0
+
+    if distance >= 0.75:
+        return 50.0
+
+    return round(50 + ((0.75 - distance) / 0.40 * 49), 1)
+
+
 def normalized_gcs_bucket_name():
     bucket = GCS_VIDEO_BUCKET.strip().strip("\"'")
 
@@ -130,14 +150,7 @@ def attendance_csv_rows():
         present = str(row.get("present") or "").strip().upper()
         raw_confidence = row.get("avg_confidence") or row.get("confidence") or ""
 
-        try:
-            confidence = float(raw_confidence)
-            if confidence <= 1:
-                accuracy = round((1 - confidence) * 100, 1)
-            else:
-                accuracy = round(confidence, 1)
-        except Exception:
-            accuracy = None
+        accuracy = distance_to_match_percent(raw_confidence)
 
         item = {
             "date": row.get("date"),

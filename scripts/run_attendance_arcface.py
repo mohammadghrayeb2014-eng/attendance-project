@@ -22,6 +22,7 @@ if sys.platform == 'win32':
 PROJECT_ROOT = Path(__file__).parent.parent
 VIDEO_DIR = PROJECT_ROOT / "data/classroom_videos"
 PKL_PATH = PROJECT_ROOT / "models/arcface_embeddings.pkl"
+YUNET_PATH = PROJECT_ROOT / "models/face_yunet.onnx"
 OUT_CSV = PROJECT_ROOT / "output/attendance/attendance.csv"
 DEBUG_DIR = PROJECT_ROOT / "output/debug_frames"
 
@@ -46,18 +47,27 @@ DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
 # ===== CONFIG =====
 MODEL_NAME = "ArcFace"
-DETECTOR_BACKEND = os.getenv("AI_DETECTOR_BACKEND", "opencv").strip() or "opencv"
 THRESHOLD = 0.75  # Cosine distance threshold
-PROCESS_EVERY_N_FRAMES = int(os.getenv("AI_PROCESS_EVERY_N_FRAMES", "6"))
+PROCESS_EVERY_N_FRAMES = int(os.getenv("AI_PROCESS_EVERY_N_FRAMES", "3"))
 MIN_HITS = 1
 MAX_FRAME_WIDTH = int(os.getenv("AI_MAX_FRAME_WIDTH", "1280"))
+MIN_FACE_SCORE = float(os.getenv("AI_MIN_FACE_SCORE", "0.45"))
+
+CANONICAL = np.array([
+    [38.2946, 51.6963],
+    [73.5318, 51.5014],
+    [56.0252, 71.7366],
+    [41.5493, 92.3655],
+    [70.7299, 92.2041],
+], dtype=np.float32)
 
 print(
     "AI config:",
     f"model={MODEL_NAME}",
-    f"detector={DETECTOR_BACKEND}",
+    "detector=yunet",
     f"every_n_frames={PROCESS_EVERY_N_FRAMES}",
-    f"max_frame_width={MAX_FRAME_WIDTH}"
+    f"max_frame_width={MAX_FRAME_WIDTH}",
+    f"min_face_score={MIN_FACE_SCORE}"
 )
 
 # ===== LOAD VIDEO =====
@@ -76,6 +86,10 @@ print(f"Running ArcFace on: {VIDEO_PATH}")
 # ===== LOAD EMBEDDINGS =====
 if not PKL_PATH.exists():
     print("No embeddings file found. Run training first.")
+    sys.exit(1)
+
+if not YUNET_PATH.exists():
+    print(f"YuNet face detector is missing: {YUNET_PATH}")
     sys.exit(1)
 
 with open(PKL_PATH, "rb") as f:
@@ -112,6 +126,34 @@ def find_matches(frame_face_embedding):
     if min_dist > THRESHOLD:
         return "Unknown", min_dist
     return best_name, min_dist
+
+
+def align_face(img, face):
+    pts = face[4:14].reshape(5, 2).astype(np.float32)
+    matrix, _ = cv2.estimateAffinePartial2D(pts, CANONICAL, method=cv2.LMEDS)
+
+    if matrix is None:
+        return None
+
+    return cv2.warpAffine(
+        img,
+        matrix,
+        (112, 112),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_REFLECT
+    )
+
+
+def detect_faces(frame):
+    height, width = frame.shape[:2]
+    detector = cv2.FaceDetectorYN.create(
+        str(YUNET_PATH),
+        "",
+        (width, height),
+        score_threshold=MIN_FACE_SCORE
+    )
+    _, faces = detector.detect(frame)
+    return [] if faces is None else faces
 
 
 def run():
@@ -152,19 +194,26 @@ def run():
             print(f"  Processing: {frame_idx}/{total_frames}")
 
         try:
-            faces = DeepFace.represent(
-                img_path=frame,
-                model_name=MODEL_NAME,
-                detector_backend=DETECTOR_BACKEND,
-                enforce_detection=False,
-                align=True
-            )
+            faces = detect_faces(frame)
 
-            for f in faces:
-                if f["face_confidence"] < 0.6:
+            for face in faces:
+                aligned = align_face(frame, face)
+
+                if aligned is None:
                     continue
 
-                name, dist = find_matches(f["embedding"])
+                represented = DeepFace.represent(
+                    img_path=aligned,
+                    model_name=MODEL_NAME,
+                    detector_backend="skip",
+                    enforce_detection=False,
+                    align=False
+                )
+
+                if not represented:
+                    continue
+
+                name, dist = find_matches(represented[0]["embedding"])
                 acc = max(0, 1 - dist)
 
                 if name != "Unknown":
@@ -175,8 +224,7 @@ def run():
                     color = (0, 0, 255)
 
                 # Draw for debug
-                x, y, w, h = (f["facial_area"]["x"], f["facial_area"]["y"],
-                               f["facial_area"]["w"], f["facial_area"]["h"])
+                x, y, w, h = map(int, face[:4])
                 cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
                 cv2.putText(frame, f"{name} ({acc:.2%})", (x, y - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
