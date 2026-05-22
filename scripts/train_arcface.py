@@ -46,6 +46,7 @@ def train():
         return
         
     known_embeddings = []
+    metadata = []
     
     # We'll use a single detector instance for the entire training if possible
     # but detection size must match image size. 
@@ -99,8 +100,17 @@ def train():
                 pass
                         
         if student_ems:
-            avg_em = np.mean(student_ems, axis=0)
-            known_embeddings.append({"name": name, "embedding": avg_em})
+            for idx, embedding in enumerate(student_ems, start=1):
+                known_embeddings.append({
+                    "name": name,
+                    "embedding": embedding,
+                    "sample": idx
+                })
+
+            metadata.append({
+                "name": name,
+                "samples": len(student_ems)
+            })
             print(f"  SUCCESS: Generated {len(student_ems)} embeddings")
         else:
             print(f"  FAILED: No faces detected for {name}")
@@ -109,6 +119,14 @@ def train():
         with open(PKL_PATH, "wb") as f:
             pickle.dump(known_embeddings, f)
         print(f"\nDATABASE SAVED: {PKL_PATH}")
+
+        with open(LABELS_PATH, "w", encoding="utf-8") as f:
+            json.dump({
+                "model": MODEL_NAME,
+                "detector": "yunet",
+                "students": metadata,
+                "total_embeddings": len(known_embeddings)
+            }, f, indent=2)
     else:
         print("\nTRAINING FAILED: Zero embeddings generated.")
 

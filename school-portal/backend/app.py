@@ -185,15 +185,22 @@ def run_ai_attendance():
         return None, ("AI runner script is missing", 500)
 
     try:
+        env = os.environ.copy()
+        env.setdefault("PYTHONUNBUFFERED", "1")
+        env.setdefault("PYTHONIOENCODING", "utf-8")
+        env.setdefault("CUDA_VISIBLE_DEVICES", "-1")
+        env.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+
         result = subprocess.run(
             [sys.executable, str(script_path)],
             cwd=str(ROOT),
             capture_output=True,
             text=True,
-            timeout=int(os.getenv("AI_ATTENDANCE_TIMEOUT", "600"))
+            timeout=int(os.getenv("AI_ATTENDANCE_TIMEOUT", "840")),
+            env=env
         )
     except subprocess.TimeoutExpired:
-        return None, ("AI processing timed out. Try a shorter video or increase Cloud Run timeout.", 504)
+        return None, ("AI processing timed out before the video finished. Use a shorter video or increase Cloud Run timeout.", 504)
 
     if result.returncode != 0:
         app.logger.error(
@@ -209,7 +216,14 @@ def run_ai_attendance():
 
 def ai_failure_details(result):
     if not result:
-        return ""
+        return "The AI runner stopped before returning output."
+
+    if result.returncode < 0:
+        return (
+            f"The AI runner was killed by the platform with signal {-result.returncode}. "
+            "This usually means Cloud Run ran out of memory, CPU time, or request timeout. "
+            "Use a shorter video, increase Cloud Run memory/timeout, or raise AI_PROCESS_EVERY_N_FRAMES."
+        )
 
     stderr = (result.stderr or "").strip()
     stdout = (result.stdout or "").strip()
@@ -241,6 +255,9 @@ def ai_failure_details(result):
         lines.append(clean)
 
     detail = "\n".join(lines[-20:]) or stdout or stderr
+
+    if not detail:
+        detail = f"The AI runner exited with code {result.returncode} but did not print an error."
 
     return detail[-1200:]
 

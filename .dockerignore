@@ -9,6 +9,11 @@ all students
 data
 output
 classroom_videos
+models/deepface/**
+!models/deepface/.deepface/
+!models/deepface/.deepface/weights/
+models/deepface/.deepface/weights/**
+!models/deepface/.deepface/weights/arcface_weights.h5
 *.zip
 *.HEIC
 *.jpg

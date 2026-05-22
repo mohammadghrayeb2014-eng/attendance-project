@@ -637,7 +637,10 @@ async function uploadLargeVideoViaGcs(file) {
       })
     });
   } catch (err) {
-    throw new Error(`Could not start AI video processing. ${err.message}`);
+    throw new Error(
+      `The video uploaded, but the AI processing request disconnected before the server returned a response. ${err.message}. ` +
+      "Try again with a shorter video, or increase the Cloud Run request timeout and memory."
+    );
   }
 
   const data = await readResponse(processRes);

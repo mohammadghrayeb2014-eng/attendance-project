@@ -47,11 +47,12 @@ DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
 # ===== CONFIG =====
 MODEL_NAME = "ArcFace"
-THRESHOLD = 0.75  # Cosine distance threshold
-PROCESS_EVERY_N_FRAMES = int(os.getenv("AI_PROCESS_EVERY_N_FRAMES", "3"))
-MIN_HITS = 1
-MAX_FRAME_WIDTH = int(os.getenv("AI_MAX_FRAME_WIDTH", "1280"))
+THRESHOLD = float(os.getenv("AI_MATCH_THRESHOLD", "0.55"))
+PROCESS_EVERY_N_FRAMES = int(os.getenv("AI_PROCESS_EVERY_N_FRAMES", "6"))
+MIN_HITS = int(os.getenv("AI_MIN_HITS", "5"))
+MAX_FRAME_WIDTH = int(os.getenv("AI_MAX_FRAME_WIDTH", "960"))
 MIN_FACE_SCORE = float(os.getenv("AI_MIN_FACE_SCORE", "0.45"))
+MAX_FRAMES = int(os.getenv("AI_MAX_FRAMES", "0"))
 
 CANONICAL = np.array([
     [38.2946, 51.6963],
@@ -65,9 +66,12 @@ print(
     "AI config:",
     f"model={MODEL_NAME}",
     "detector=yunet",
+    f"threshold={THRESHOLD}",
     f"every_n_frames={PROCESS_EVERY_N_FRAMES}",
+    f"min_hits={MIN_HITS}",
     f"max_frame_width={MAX_FRAME_WIDTH}",
-    f"min_face_score={MIN_FACE_SCORE}"
+    f"min_face_score={MIN_FACE_SCORE}",
+    f"max_frames={MAX_FRAMES or 'unlimited'}"
 )
 
 # ===== LOAD VIDEO =====
@@ -144,15 +148,18 @@ def align_face(img, face):
     )
 
 
+face_detector = cv2.FaceDetectorYN.create(
+    str(YUNET_PATH),
+    "",
+    (320, 320),
+    score_threshold=MIN_FACE_SCORE
+)
+
+
 def detect_faces(frame):
     height, width = frame.shape[:2]
-    detector = cv2.FaceDetectorYN.create(
-        str(YUNET_PATH),
-        "",
-        (width, height),
-        score_threshold=MIN_FACE_SCORE
-    )
-    _, faces = detector.detect(frame)
+    face_detector.setInputSize((width, height))
+    _, faces = face_detector.detect(frame)
     return [] if faces is None else faces
 
 
@@ -179,6 +186,10 @@ def run():
             break
 
         frame_idx += 1
+
+        if MAX_FRAMES > 0 and frame_idx > MAX_FRAMES:
+            break
+
         if frame_idx % PROCESS_EVERY_N_FRAMES != 0:
             continue
 
@@ -195,6 +206,7 @@ def run():
 
         try:
             faces = detect_faces(frame)
+            frame_detections = []
 
             for face in faces:
                 aligned = align_face(frame, face)
@@ -215,18 +227,38 @@ def run():
 
                 name, dist = find_matches(represented[0]["embedding"])
                 acc = max(0, 1 - dist)
+                frame_detections.append({
+                    "name": name,
+                    "dist": dist,
+                    "acc": acc,
+                    "face": face
+                })
 
-                if name != "Unknown":
-                    hits[name] += 1
-                    confidences[name].append(dist)
-                    color = (0, 255, 0)
-                else:
-                    color = (0, 0, 255)
+            frame_best = {}
 
-                # Draw for debug
+            for item in frame_detections:
+                name = item["name"]
+
+                if name == "Unknown":
+                    continue
+
+                if name not in frame_best or item["dist"] < frame_best[name]["dist"]:
+                    frame_best[name] = item
+
+            for name, item in frame_best.items():
+                hits[name] += 1
+                confidences[name].append(item["dist"])
+
+            for item in frame_detections:
+                name = item["name"]
+                face = item["face"]
+                counted = name in frame_best and frame_best[name] is item
+                color = (0, 255, 0) if counted else (0, 0, 255)
+
+                # Draw for debug. A hit is counted once per student per frame.
                 x, y, w, h = map(int, face[:4])
                 cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
-                cv2.putText(frame, f"{name} ({acc:.2%})", (x, y - 10),
+                cv2.putText(frame, f"{name} ({item['acc']:.2%})", (x, y - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
             if saved < 20 and len(faces) > 0:
