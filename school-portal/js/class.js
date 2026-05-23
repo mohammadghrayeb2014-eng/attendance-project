@@ -471,6 +471,7 @@ function applyAiAttendanceResults(aiResults) {
 
   let totalConfidence = 0;
   let matchedStudents = 0;
+  let predictedStudents = 0;
   let reviewStudents = 0;
 
   rows.forEach(tr => {
@@ -526,9 +527,11 @@ function applyAiAttendanceResults(aiResults) {
       matchedStudents++;
 
     } else {
+      predictedStudents++;
+
       accuracyCell.innerHTML = `
         <span class="status status-warning" style="font-size: 0.7rem;">
-          Not Detected
+          Predicted Present
         </span>
       `;
 
@@ -551,7 +554,7 @@ function applyAiAttendanceResults(aiResults) {
         <div>
           <div class="accuracy-label">AI Attendance Review</div>
           <div style="font-size: 0.8rem; color: var(--text-secondary);">
-            ${matchedStudents}/${reviewStudents} seated students detected
+            ${matchedStudents} face matches, ${predictedStudents} roster predictions
           </div>
         </div>
         <div class="accuracy-value">${avgConfidence.toFixed(1)}%</div>
@@ -560,7 +563,7 @@ function applyAiAttendanceResults(aiResults) {
   } else {
     accBox.innerHTML = `
       <div class="tag tag-present">
-        No seated students were detected; current manual attendance kept
+        ${predictedStudents}/${reviewStudents} seated students predicted present from roster
       </div>
     `;
   }
