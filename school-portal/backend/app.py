@@ -108,15 +108,9 @@ def distance_to_match_percent(distance):
     if distance >= 1:
         return None
 
-    # ArcFace cosine distances are not user-facing percentages. Accepted
-    # matches should read as match strength, not raw "1 - distance" math.
-    if distance <= 0.35:
-        return 99.0
-
-    if distance >= 0.75:
-        return 50.0
-
-    return round(50 + ((0.75 - distance) / 0.40 * 49), 1)
+    # ArcFace returns cosine distance: lower is better. This is a direct
+    # match score from that distance, not a probability of attendance.
+    return round(max(0.0, min(100.0, (1.0 - distance) * 100)), 1)
 
 
 def normalized_gcs_bucket_name():
@@ -164,7 +158,8 @@ def attendance_csv_rows():
             "present": present,
             "status": "Present" if present == "YES" else "Absent",
             "hits": row.get("hits"),
-            "avg_confidence": raw_confidence
+            "avg_confidence": raw_confidence,
+            "match_distance": raw_confidence
         }
 
         if accuracy is not None:

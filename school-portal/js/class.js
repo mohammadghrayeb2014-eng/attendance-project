@@ -512,7 +512,7 @@ function applyAiAttendanceResults(aiResults) {
 
       accuracyCell.innerHTML = `
         <span class="status status-ok" style="font-size: 0.7rem;">
-          ${Math.round(confidence)}% Match
+          ${confidence.toFixed(1)}% Match
         </span>
       `;
 
