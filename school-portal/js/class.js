@@ -471,6 +471,7 @@ function applyAiAttendanceResults(aiResults) {
 
   let totalConfidence = 0;
   let matchedStudents = 0;
+  let reviewStudents = 0;
 
   rows.forEach(tr => {
     const cells = tr.querySelectorAll("td");
@@ -485,6 +486,8 @@ function applyAiAttendanceResults(aiResults) {
     const actionBtn = tr.querySelector("button");
 
     if (!studentName || !accuracyCell || !statusTag) return;
+
+    reviewStudents++;
 
     const aiRecord = aiResults.find(r =>
       normalize(r.name) === studentName ||
@@ -546,9 +549,9 @@ function applyAiAttendanceResults(aiResults) {
     accBox.innerHTML = `
       <div class="accuracy-card">
         <div>
-          <div class="accuracy-label">AI Model Performance</div>
+          <div class="accuracy-label">AI Attendance Review</div>
           <div style="font-size: 0.8rem; color: var(--text-secondary);">
-            Processed from uploaded video
+            ${matchedStudents}/${reviewStudents} seated students detected
           </div>
         </div>
         <div class="accuracy-value">${avgConfidence.toFixed(1)}%</div>
