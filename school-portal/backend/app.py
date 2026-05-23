@@ -196,6 +196,19 @@ def ai_subprocess_env(extra_env=None):
     return env
 
 
+def ai_timeout_seconds():
+    return int(os.getenv("AI_ATTENDANCE_TIMEOUT", "840"))
+
+
+def ai_runner_time_budget_seconds():
+    configured = os.getenv("AI_RUNNER_TIME_BUDGET_SECONDS")
+
+    if configured:
+        return int(configured)
+
+    return max(60, ai_timeout_seconds() - 180)
+
+
 def run_ai_attendance(expected_names=None):
     script_path = ROOT / "scripts" / "run_attendance_arcface.py"
 
@@ -203,7 +216,9 @@ def run_ai_attendance(expected_names=None):
         return None, ("AI runner script is missing", 500)
 
     try:
-        extra_env = {}
+        extra_env = {
+            "AI_RUNNER_TIME_BUDGET_SECONDS": str(ai_runner_time_budget_seconds())
+        }
 
         if expected_names:
             extra_env["AI_EXPECTED_NAMES"] = ",".join(expected_names)
@@ -213,7 +228,7 @@ def run_ai_attendance(expected_names=None):
             cwd=str(ROOT),
             capture_output=True,
             text=True,
-            timeout=int(os.getenv("AI_ATTENDANCE_TIMEOUT", "840")),
+            timeout=ai_timeout_seconds(),
             env=ai_subprocess_env(extra_env)
         )
     except subprocess.TimeoutExpired:
@@ -1168,8 +1183,10 @@ def process_gcs_attendance_video_stream():
 
             yield ndjson_event(type="status", message="Starting AI video processing...")
 
-            timeout_seconds = int(os.getenv("AI_ATTENDANCE_TIMEOUT", "840"))
-            extra_env = {}
+            timeout_seconds = ai_timeout_seconds()
+            extra_env = {
+                "AI_RUNNER_TIME_BUDGET_SECONDS": str(ai_runner_time_budget_seconds())
+            }
 
             if expected_names:
                 extra_env["AI_EXPECTED_NAMES"] = ",".join(expected_names)

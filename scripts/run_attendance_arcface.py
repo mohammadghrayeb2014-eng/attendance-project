@@ -6,6 +6,7 @@ from pathlib import Path
 from datetime import datetime
 import sys
 import os
+import time
 
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
@@ -52,20 +53,21 @@ PARTIAL_FACE_THRESHOLD = float(os.getenv("AI_PARTIAL_FACE_THRESHOLD", "0.62"))
 MIN_MATCH_MARGIN = float(os.getenv("AI_MIN_MATCH_MARGIN", "0.02"))
 MATCH_TOP_K = int(os.getenv("AI_MATCH_TOP_K", "3"))
 PROCESS_EVERY_N_FRAMES = int(os.getenv("AI_PROCESS_EVERY_N_FRAMES", "6"))
-MIN_HITS = int(os.getenv("AI_MIN_HITS", "2"))
+MIN_HITS = int(os.getenv("AI_MIN_HITS", "1"))
 MAX_FRAME_WIDTH = int(os.getenv("AI_MAX_FRAME_WIDTH", "1280"))
 MIN_FACE_SCORE = float(os.getenv("AI_MIN_FACE_SCORE", "0.30"))
 MAX_FRAMES = int(os.getenv("AI_MAX_FRAMES", "0"))
-MAX_PROCESSED_FRAMES = int(os.getenv("AI_MAX_PROCESSED_FRAMES", "260"))
-MAX_FACES_PER_FRAME = int(os.getenv("AI_MAX_FACES_PER_FRAME", "12"))
-DETECT_UPSCALE = float(os.getenv("AI_DETECT_UPSCALE", "1.5"))
+MAX_PROCESSED_FRAMES = int(os.getenv("AI_MAX_PROCESSED_FRAMES", "90"))
+MAX_FACES_PER_FRAME = int(os.getenv("AI_MAX_FACES_PER_FRAME", "8"))
+DETECT_UPSCALE = float(os.getenv("AI_DETECT_UPSCALE", "1.25"))
 FACE_NMS_IOU = float(os.getenv("AI_FACE_NMS_IOU", "0.35"))
 MIN_FACE_WIDTH_RATIO = float(os.getenv("AI_MIN_FACE_WIDTH_RATIO", "0.015"))
 MIN_FACE_HEIGHT_RATIO = float(os.getenv("AI_MIN_FACE_HEIGHT_RATIO", "0.020"))
 MAX_FACE_WIDTH_RATIO = float(os.getenv("AI_MAX_FACE_WIDTH_RATIO", "0.28"))
 MAX_FACE_HEIGHT_RATIO = float(os.getenv("AI_MAX_FACE_HEIGHT_RATIO", "0.28"))
 FACE_CROP_PADDING = float(os.getenv("AI_FACE_CROP_PADDING", "0.45"))
-FACE_CROP_TARGET_SIZE = int(os.getenv("AI_FACE_CROP_TARGET_SIZE", "224"))
+FACE_CROP_TARGET_SIZE = int(os.getenv("AI_FACE_CROP_TARGET_SIZE", "160"))
+RUNNER_TIME_BUDGET_SECONDS = int(os.getenv("AI_RUNNER_TIME_BUDGET_SECONDS", "600"))
 IGNORE_REGIONS_RAW = os.getenv("AI_IGNORE_REGIONS", "0.68,0.25,1.00,0.98")
 EXPECTED_NAMES_RAW = os.getenv("AI_EXPECTED_NAMES", "")
 
@@ -98,6 +100,7 @@ print(
     f"max_face_ratio={MAX_FACE_WIDTH_RATIO}x{MAX_FACE_HEIGHT_RATIO}",
     f"face_crop_padding={FACE_CROP_PADDING}",
     f"face_crop_target_size={FACE_CROP_TARGET_SIZE}",
+    f"time_budget={RUNNER_TIME_BUDGET_SECONDS or 'unlimited'}",
     f"ignore_regions={IGNORE_REGIONS_RAW or 'none'}"
 )
 
@@ -528,10 +531,20 @@ def run():
     failures = 0
     first_error = None
     run_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    started_at = time.monotonic()
+    stopped_for_budget = False
 
     print(f"Sampling {len(frame_numbers) or 'streamed'} frame(s) from {total_frames or 'unknown'} total frames")
 
     while True:
+        if RUNNER_TIME_BUDGET_SECONDS > 0 and time.monotonic() - started_at >= RUNNER_TIME_BUDGET_SECONDS:
+            stopped_for_budget = True
+            print(
+                f"Stopping early after {RUNNER_TIME_BUDGET_SECONDS}s time budget. "
+                "Writing best attendance result collected so far."
+            )
+            break
+
         if frame_numbers:
             if processed_frames >= len(frame_numbers):
                 break
@@ -638,6 +651,9 @@ def run():
 
     if first_error:
         print(f"DeepFace warning: {failures} frame(s) failed. First error: {first_error}")
+
+    if stopped_for_budget:
+        print(f"Processed {processed_frames}/{len(frame_numbers) or '?'} sampled frame(s) before time budget.")
 
     # ===== Generate CSV =====
     rows = []
