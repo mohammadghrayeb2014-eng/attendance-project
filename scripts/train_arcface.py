@@ -18,7 +18,9 @@ YUNET_PATH = MODEL_DIR / "face_yunet.onnx"
 
 # ===== CONFIG =====
 MODEL_NAME = "ArcFace"
-MAX_DETECT_WIDTH = 1024 
+MAX_DETECT_WIDTH = int(os.getenv("TRAIN_MAX_DETECT_WIDTH", "1280"))
+TRAIN_AUGMENT = os.getenv("TRAIN_AUGMENT", "1") != "0"
+FACE_CROP_TARGET_SIZE = int(os.getenv("TRAIN_FACE_CROP_TARGET_SIZE", "224"))
 
 # Alignment Matrix
 CANONICAL = np.array([
@@ -36,6 +38,60 @@ def align_face(img, face):
     aligned = cv2.warpAffine(img, M, (112, 112), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
     return aligned
 
+
+def enhance_face_image(img):
+    if img is None or img.size == 0:
+        return None
+
+    enhanced = img.copy()
+    height, width = enhanced.shape[:2]
+    largest_side = max(height, width)
+
+    if FACE_CROP_TARGET_SIZE > 0 and largest_side < FACE_CROP_TARGET_SIZE:
+        scale = FACE_CROP_TARGET_SIZE / largest_side
+        enhanced = cv2.resize(
+            enhanced,
+            (int(width * scale), int(height * scale)),
+            interpolation=cv2.INTER_CUBIC
+        )
+
+    try:
+        lab = cv2.cvtColor(enhanced, cv2.COLOR_BGR2LAB)
+        l_channel, a_channel, b_channel = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        l_channel = clahe.apply(l_channel)
+        enhanced = cv2.cvtColor(
+            cv2.merge((l_channel, a_channel, b_channel)),
+            cv2.COLOR_LAB2BGR
+        )
+    except Exception:
+        pass
+
+    blurred = cv2.GaussianBlur(enhanced, (0, 0), 1.0)
+    return cv2.addWeighted(enhanced, 1.5, blurred, -0.5, 0)
+
+
+def face_variants(aligned):
+    variants = [("aligned", aligned)]
+
+    if not TRAIN_AUGMENT:
+        return variants
+
+    enhanced = enhance_face_image(aligned)
+    flipped = cv2.flip(aligned, 1)
+
+    if enhanced is not None:
+        variants.append(("enhanced", enhanced))
+
+    variants.append(("flipped", flipped))
+
+    enhanced_flipped = enhance_face_image(flipped)
+
+    if enhanced_flipped is not None:
+        variants.append(("enhanced_flipped", enhanced_flipped))
+
+    return variants
+
 def train():
     print(f"\nTraining ArcFace embeddings...")
     print(f"Project Root: {PROJECT_ROOT}")
@@ -47,9 +103,6 @@ def train():
         
     known_embeddings = []
     metadata = []
-    
-    # We'll use a single detector instance for the entire training if possible
-    # but detection size must match image size. 
     
     student_dirs = sorted([d for d in STUDENTS_DIR.iterdir() if d.is_dir()])
     
@@ -72,39 +125,44 @@ def train():
             img_small = cv2.resize(img_bgr, (0,0), fx=scale, fy=scale)
             h, w = img_small.shape[:2]
             
-            detector = cv2.FaceDetectorYN.create(str(YUNET_PATH), "", (w, h), score_threshold=0.5)
+            detector = cv2.FaceDetectorYN.create(str(YUNET_PATH), "", (w, h), score_threshold=0.35)
             _, faces = detector.detect(img_small)
             
             if faces is not None and len(faces) > 0:
-                face = faces[0]
+                face = sorted(faces, key=lambda item: item[-1], reverse=True)[0]
                 face_orig = face.copy()
                 face_orig[:14] = face[:14] / scale # Scale landmarks back
                 
                 aligned = align_face(img_bgr, face_orig)
                 if aligned is not None:
-                    try:
-                        res = DeepFace.represent(
-                            img_path=aligned,
-                            model_name=MODEL_NAME,
-                            detector_backend='skip',
-                            enforce_detection=False,
-                            align=False
-                        )
-                        if res and len(res) > 0:
-                            student_ems.append(res[0]["embedding"])
-                    except Exception as e:
-                        print(f"  DeepFace error: {str(e)}")
-                        continue
+                    for variant_name, variant_img in face_variants(aligned):
+                        try:
+                            res = DeepFace.represent(
+                                img_path=variant_img,
+                                model_name=MODEL_NAME,
+                                detector_backend='skip',
+                                enforce_detection=False,
+                                align=False
+                            )
+                            if res and len(res) > 0:
+                                student_ems.append({
+                                    "embedding": res[0]["embedding"],
+                                    "variant": variant_name
+                                })
+                        except Exception as e:
+                            print(f"  DeepFace error ({variant_name}): {str(e)}")
+                            continue
             else:
                 # Log one failure for debugging
                 pass
                         
         if student_ems:
-            for idx, embedding in enumerate(student_ems, start=1):
+            for idx, item in enumerate(student_ems, start=1):
                 known_embeddings.append({
                     "name": name,
-                    "embedding": embedding,
-                    "sample": idx
+                    "embedding": item["embedding"],
+                    "sample": idx,
+                    "variant": item["variant"]
                 })
 
             metadata.append({

@@ -48,15 +48,25 @@ DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 # ===== CONFIG =====
 MODEL_NAME = "ArcFace"
 THRESHOLD = float(os.getenv("AI_MATCH_THRESHOLD", "0.55"))
+PARTIAL_FACE_THRESHOLD = float(os.getenv("AI_PARTIAL_FACE_THRESHOLD", "0.62"))
+MIN_MATCH_MARGIN = float(os.getenv("AI_MIN_MATCH_MARGIN", "0.02"))
+MATCH_TOP_K = int(os.getenv("AI_MATCH_TOP_K", "3"))
 PROCESS_EVERY_N_FRAMES = int(os.getenv("AI_PROCESS_EVERY_N_FRAMES", "6"))
-MIN_HITS = int(os.getenv("AI_MIN_HITS", "5"))
-MAX_FRAME_WIDTH = int(os.getenv("AI_MAX_FRAME_WIDTH", "960"))
-MIN_FACE_SCORE = float(os.getenv("AI_MIN_FACE_SCORE", "0.45"))
-MAX_FRAMES = int(os.getenv("AI_MAX_FRAMES", "900"))
+MIN_HITS = int(os.getenv("AI_MIN_HITS", "2"))
+MAX_FRAME_WIDTH = int(os.getenv("AI_MAX_FRAME_WIDTH", "1280"))
+MIN_FACE_SCORE = float(os.getenv("AI_MIN_FACE_SCORE", "0.30"))
+MAX_FRAMES = int(os.getenv("AI_MAX_FRAMES", "0"))
+MAX_PROCESSED_FRAMES = int(os.getenv("AI_MAX_PROCESSED_FRAMES", "260"))
 MAX_FACES_PER_FRAME = int(os.getenv("AI_MAX_FACES_PER_FRAME", "12"))
+DETECT_UPSCALE = float(os.getenv("AI_DETECT_UPSCALE", "1.5"))
+FACE_NMS_IOU = float(os.getenv("AI_FACE_NMS_IOU", "0.35"))
+MIN_FACE_WIDTH_RATIO = float(os.getenv("AI_MIN_FACE_WIDTH_RATIO", "0.015"))
+MIN_FACE_HEIGHT_RATIO = float(os.getenv("AI_MIN_FACE_HEIGHT_RATIO", "0.020"))
 MAX_FACE_WIDTH_RATIO = float(os.getenv("AI_MAX_FACE_WIDTH_RATIO", "0.28"))
 MAX_FACE_HEIGHT_RATIO = float(os.getenv("AI_MAX_FACE_HEIGHT_RATIO", "0.28"))
-IGNORE_REGIONS_RAW = os.getenv("AI_IGNORE_REGIONS", "0.50,0.05,1.00,0.78")
+FACE_CROP_PADDING = float(os.getenv("AI_FACE_CROP_PADDING", "0.45"))
+FACE_CROP_TARGET_SIZE = int(os.getenv("AI_FACE_CROP_TARGET_SIZE", "224"))
+IGNORE_REGIONS_RAW = os.getenv("AI_IGNORE_REGIONS", "0.68,0.25,1.00,0.98")
 EXPECTED_NAMES_RAW = os.getenv("AI_EXPECTED_NAMES", "")
 
 CANONICAL = np.array([
@@ -72,13 +82,22 @@ print(
     f"model={MODEL_NAME}",
     "detector=yunet",
     f"threshold={THRESHOLD}",
+    f"partial_threshold={PARTIAL_FACE_THRESHOLD}",
+    f"min_match_margin={MIN_MATCH_MARGIN}",
+    f"match_top_k={MATCH_TOP_K}",
     f"every_n_frames={PROCESS_EVERY_N_FRAMES}",
     f"min_hits={MIN_HITS}",
     f"max_frame_width={MAX_FRAME_WIDTH}",
     f"min_face_score={MIN_FACE_SCORE}",
     f"max_frames={MAX_FRAMES or 'unlimited'}",
+    f"max_processed_frames={MAX_PROCESSED_FRAMES or 'unlimited'}",
     f"max_faces_per_frame={MAX_FACES_PER_FRAME or 'unlimited'}",
+    f"detect_upscale={DETECT_UPSCALE}",
+    f"face_nms_iou={FACE_NMS_IOU}",
+    f"min_face_ratio={MIN_FACE_WIDTH_RATIO}x{MIN_FACE_HEIGHT_RATIO}",
     f"max_face_ratio={MAX_FACE_WIDTH_RATIO}x{MAX_FACE_HEIGHT_RATIO}",
+    f"face_crop_padding={FACE_CROP_PADDING}",
+    f"face_crop_target_size={FACE_CROP_TARGET_SIZE}",
     f"ignore_regions={IGNORE_REGIONS_RAW or 'none'}"
 )
 
@@ -158,6 +177,10 @@ match_data = [
     item for item in known_data
     if not expected_names or item["name"] in expected_names
 ]
+match_groups = {}
+
+for item in match_data:
+    match_groups.setdefault(item["name"], []).append(item)
 
 print("Known students:", ", ".join(sorted({item["name"] for item in known_data})))
 
@@ -179,19 +202,48 @@ def cosine_distance(a, b):
     return 1.0 - dot / norm
 
 
-def find_matches(frame_face_embedding):
-    best_name = "Unknown"
-    min_dist = 1.0
+def nearest_match(frame_face_embedding):
+    scores = []
 
-    for item in match_data:
-        dist = cosine_distance(frame_face_embedding, item["embedding"])
-        if dist < min_dist:
-            min_dist = dist
-            best_name = item["name"]
+    for name, items in match_groups.items():
+        distances = sorted(
+            cosine_distance(frame_face_embedding, item["embedding"])
+            for item in items
+        )
 
-    if min_dist > THRESHOLD:
-        return "Unknown", min_dist
-    return best_name, min_dist
+        if not distances:
+            continue
+
+        top_k = distances[:max(1, min(MATCH_TOP_K, len(distances)))]
+        scores.append((float(np.mean(top_k)), name))
+
+    if not scores:
+        return {
+            "name": "Unknown",
+            "dist": 1.0,
+            "second_dist": 1.0,
+            "margin": 0.0
+        }
+
+    scores.sort()
+    best_dist, best_name = scores[0]
+    second_dist = scores[1][0] if len(scores) > 1 else 1.0
+
+    return {
+        "name": best_name,
+        "dist": best_dist,
+        "second_dist": second_dist,
+        "margin": second_dist - best_dist
+    }
+
+
+def find_matches(frame_face_embedding, threshold=THRESHOLD):
+    match = nearest_match(frame_face_embedding)
+
+    if match["dist"] > threshold or match["margin"] < MIN_MATCH_MARGIN:
+        return "Unknown", match["dist"]
+
+    return match["name"], match["dist"]
 
 
 def align_face(img, face):
@@ -210,6 +262,128 @@ def align_face(img, face):
     )
 
 
+def crop_face(img, face):
+    height, width = img.shape[:2]
+    x, y, w, h = face[:4]
+    pad_x = int(w * FACE_CROP_PADDING)
+    pad_y = int(h * FACE_CROP_PADDING)
+    left = max(0, int(x) - pad_x)
+    top = max(0, int(y) - pad_y)
+    right = min(width, int(x + w) + pad_x)
+    bottom = min(height, int(y + h) + pad_y)
+
+    if right <= left or bottom <= top:
+        return None
+
+    crop = img[top:bottom, left:right]
+
+    if crop.size == 0:
+        return None
+
+    return crop
+
+
+def enhance_face_image(img):
+    if img is None or img.size == 0:
+        return None
+
+    enhanced = img.copy()
+    height, width = enhanced.shape[:2]
+    largest_side = max(height, width)
+
+    if FACE_CROP_TARGET_SIZE > 0 and largest_side < FACE_CROP_TARGET_SIZE:
+        scale = FACE_CROP_TARGET_SIZE / largest_side
+        enhanced = cv2.resize(
+            enhanced,
+            (int(width * scale), int(height * scale)),
+            interpolation=cv2.INTER_CUBIC
+        )
+
+    try:
+        lab = cv2.cvtColor(enhanced, cv2.COLOR_BGR2LAB)
+        l_channel, a_channel, b_channel = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        l_channel = clahe.apply(l_channel)
+        enhanced = cv2.cvtColor(
+            cv2.merge((l_channel, a_channel, b_channel)),
+            cv2.COLOR_LAB2BGR
+        )
+    except Exception:
+        pass
+
+    blurred = cv2.GaussianBlur(enhanced, (0, 0), 1.0)
+    return cv2.addWeighted(enhanced, 1.5, blurred, -0.5, 0)
+
+
+def represent_image(img):
+    represented = DeepFace.represent(
+        img_path=img,
+        model_name=MODEL_NAME,
+        detector_backend="skip",
+        enforce_detection=False,
+        align=False
+    )
+
+    if not represented:
+        return None
+
+    return represented[0]["embedding"]
+
+
+def match_face(frame, face):
+    variants = []
+    aligned = align_face(frame, face)
+
+    if aligned is not None:
+        variants.append(("aligned", aligned, THRESHOLD))
+
+        enhanced_aligned = enhance_face_image(aligned)
+        if enhanced_aligned is not None:
+            variants.append(("aligned_enhanced", enhanced_aligned, THRESHOLD))
+
+    padded_crop = crop_face(frame, face)
+
+    if padded_crop is not None:
+        variants.append(("partial", padded_crop, PARTIAL_FACE_THRESHOLD))
+
+        enhanced_crop = enhance_face_image(padded_crop)
+        if enhanced_crop is not None:
+            variants.append(("partial_enhanced", enhanced_crop, PARTIAL_FACE_THRESHOLD))
+
+    best = {
+        "name": "Unknown",
+        "dist": 1.0,
+        "variant": "none",
+        "accepted": False,
+        "margin": 0.0
+    }
+
+    for variant_name, img, threshold in variants:
+        embedding = represent_image(img)
+
+        if embedding is None:
+            continue
+
+        nearest = nearest_match(embedding)
+        name = nearest["name"]
+        dist = nearest["dist"]
+        accepted = dist <= threshold and nearest["margin"] >= MIN_MATCH_MARGIN
+
+        if (accepted and not best["accepted"]) or (accepted == best["accepted"] and dist < best["dist"]):
+            best = {
+                "name": name,
+                "dist": dist,
+                "variant": variant_name,
+                "accepted": accepted,
+                "margin": nearest["margin"]
+            }
+
+    if not best["accepted"]:
+        best["name"] = "Unknown"
+
+    return best
+
+
 face_detector = cv2.FaceDetectorYN.create(
     str(YUNET_PATH),
     "",
@@ -218,13 +392,73 @@ face_detector = cv2.FaceDetectorYN.create(
 )
 
 
-def detect_faces(frame):
+def detect_faces_at_scale(frame, scale):
     height, width = frame.shape[:2]
-    face_detector.setInputSize((width, height))
-    _, faces = face_detector.detect(frame)
+
+    if scale and scale > 1:
+        detect_frame = cv2.resize(
+            frame,
+            (int(width * scale), int(height * scale)),
+            interpolation=cv2.INTER_CUBIC
+        )
+    else:
+        scale = 1.0
+        detect_frame = frame
+
+    detect_height, detect_width = detect_frame.shape[:2]
+    face_detector.setInputSize((detect_width, detect_height))
+    _, faces = face_detector.detect(detect_frame)
 
     if faces is None:
         return []
+
+    faces = [face.copy() for face in faces]
+
+    if scale != 1.0:
+        for face in faces:
+            face[:14] = face[:14] / scale
+
+    return faces
+
+
+def face_iou(a, b):
+    ax, ay, aw, ah = a[:4]
+    bx, by, bw, bh = b[:4]
+    left = max(ax, bx)
+    top = max(ay, by)
+    right = min(ax + aw, bx + bw)
+    bottom = min(ay + ah, by + bh)
+
+    if right <= left or bottom <= top:
+        return 0.0
+
+    intersection = (right - left) * (bottom - top)
+    union = (aw * ah) + (bw * bh) - intersection
+
+    return float(intersection / union) if union else 0.0
+
+
+def merge_duplicate_faces(faces):
+    if not faces:
+        return []
+
+    kept = []
+
+    for face in sorted(faces, key=lambda item: item[-1], reverse=True):
+        if all(face_iou(face, existing) < FACE_NMS_IOU for existing in kept):
+            kept.append(face)
+
+    return kept
+
+
+def detect_faces(frame):
+    height, width = frame.shape[:2]
+    faces = detect_faces_at_scale(frame, 1.0)
+
+    if DETECT_UPSCALE and DETECT_UPSCALE > 1:
+        faces.extend(detect_faces_at_scale(frame, DETECT_UPSCALE))
+
+    faces = merge_duplicate_faces(faces)
 
     filtered_faces = []
 
@@ -232,6 +466,12 @@ def detect_faces(frame):
         x, y, w, h = face[:4]
         cx = (x + w / 2) / width
         cy = (y + h / 2) / height
+
+        if MIN_FACE_WIDTH_RATIO > 0 and (w / width) < MIN_FACE_WIDTH_RATIO:
+            continue
+
+        if MIN_FACE_HEIGHT_RATIO > 0 and (h / height) < MIN_FACE_HEIGHT_RATIO:
+            continue
 
         if MAX_FACE_WIDTH_RATIO > 0 and (w / width) > MAX_FACE_WIDTH_RATIO:
             continue
@@ -253,6 +493,23 @@ def detect_faces(frame):
     return faces
 
 
+def sampled_frame_numbers(total_frames):
+    if total_frames <= 0:
+        return []
+
+    last_frame = min(total_frames, MAX_FRAMES) if MAX_FRAMES > 0 else total_frames
+
+    if last_frame <= 0:
+        return []
+
+    if MAX_PROCESSED_FRAMES > 0:
+        sample_count = min(MAX_PROCESSED_FRAMES, last_frame)
+        return sorted(set(np.linspace(1, last_frame, sample_count, dtype=int).tolist()))
+
+    step = max(1, PROCESS_EVERY_N_FRAMES)
+    return list(range(1, last_frame + 1, step))
+
+
 def run():
     cap = cv2.VideoCapture(VIDEO_PATH)
     if not cap.isOpened():
@@ -260,28 +517,49 @@ def run():
         sys.exit(1)
 
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    frame_numbers = sampled_frame_numbers(total_frames)
 
     hits = {item["name"]: 0 for item in match_data}
     confidences = {item["name"]: [] for item in match_data}
 
     frame_idx = 0
+    processed_frames = 0
     saved = 0
     failures = 0
     first_error = None
     run_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    print(f"Sampling {len(frame_numbers) or 'streamed'} frame(s) from {total_frames or 'unknown'} total frames")
+
     while True:
-        ret, frame = cap.read()
+        if frame_numbers:
+            if processed_frames >= len(frame_numbers):
+                break
+
+            frame_idx = frame_numbers[processed_frames]
+            cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, frame_idx - 1))
+            ret, frame = cap.read()
+        else:
+            ret, frame = cap.read()
+            if ret:
+                frame_idx += 1
+
+                if MAX_FRAMES > 0 and frame_idx > MAX_FRAMES:
+                    break
+
+                if frame_idx % PROCESS_EVERY_N_FRAMES != 0:
+                    continue
+
+                if MAX_PROCESSED_FRAMES > 0 and processed_frames >= MAX_PROCESSED_FRAMES:
+                    break
+
         if not ret:
+            if frame_numbers:
+                processed_frames += 1
+                continue
             break
 
-        frame_idx += 1
-
-        if MAX_FRAMES > 0 and frame_idx > MAX_FRAMES:
-            break
-
-        if frame_idx % PROCESS_EVERY_N_FRAMES != 0:
-            continue
+        processed_frames += 1
 
         if MAX_FRAME_WIDTH > 0 and frame.shape[1] > MAX_FRAME_WIDTH:
             scale = MAX_FRAME_WIDTH / frame.shape[1]
@@ -299,29 +577,16 @@ def run():
             frame_detections = []
 
             for face in faces:
-                aligned = align_face(frame, face)
-
-                if aligned is None:
-                    continue
-
-                represented = DeepFace.represent(
-                    img_path=aligned,
-                    model_name=MODEL_NAME,
-                    detector_backend="skip",
-                    enforce_detection=False,
-                    align=False
-                )
-
-                if not represented:
-                    continue
-
-                name, dist = find_matches(represented[0]["embedding"])
+                match = match_face(frame, face)
+                name = match["name"]
+                dist = match["dist"]
                 acc = max(0, 1 - dist)
                 frame_detections.append({
                     "name": name,
                     "dist": dist,
                     "acc": acc,
-                    "face": face
+                    "face": face,
+                    "variant": match["variant"]
                 })
 
             frame_best = {}
@@ -348,7 +613,7 @@ def run():
                 # Draw for debug. A hit is counted once per student per frame.
                 x, y, w, h = map(int, face[:4])
                 cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
-                cv2.putText(frame, f"{name} ({item['acc']:.2%})", (x, y - 10),
+                cv2.putText(frame, f"{name} {item['variant']} ({item['acc']:.2%})", (x, y - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
             if saved < 20 and len(faces) > 0:
@@ -367,7 +632,7 @@ def run():
 
     cap.release()
 
-    if frame_idx == 0:
+    if processed_frames == 0:
         print("Video opened, but no frames were readable.")
         sys.exit(1)
 

@@ -4,32 +4,32 @@
   "students": [
     {
       "name": "abbass",
-      "samples": 24
+      "samples": 96
     },
     {
       "name": "abbass1",
-      "samples": 25
+      "samples": 100
     },
     {
       "name": "ali",
-      "samples": 25
+      "samples": 100
     },
     {
       "name": "hassan",
-      "samples": 15
+      "samples": 60
     },
     {
       "name": "karim",
-      "samples": 16
+      "samples": 64
     },
     {
       "name": "mohammad",
-      "samples": 22
+      "samples": 88
     },
     {
       "name": "sajed",
-      "samples": 10
+      "samples": 40
     }
   ],
-  "total_embeddings": 137
+  "total_embeddings": 548
 }

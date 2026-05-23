@@ -524,16 +524,16 @@ function applyAiAttendanceResults(aiResults) {
 
     } else {
       accuracyCell.innerHTML = `
-        <span class="status status-inactive" style="font-size: 0.7rem; opacity: 0.6;">
-          No Match
+        <span class="status status-warning" style="font-size: 0.7rem;">
+          Not Detected
         </span>
       `;
 
-      statusTag.textContent = "Absent";
-      statusTag.className = "tag tag-absent";
+      statusTag.textContent = "Present";
+      statusTag.className = "tag tag-present";
 
       if (actionBtn) {
-        actionBtn.textContent = "Mark Present";
+        actionBtn.textContent = "Mark Absent";
       }
     }
   });
@@ -556,8 +556,8 @@ function applyAiAttendanceResults(aiResults) {
     `;
   } else {
     accBox.innerHTML = `
-      <div class="tag tag-absent">
-        No seated students matched by AI
+      <div class="tag tag-present">
+        No seated students were detected; current manual attendance kept
       </div>
     `;
   }
