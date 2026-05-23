@@ -54,6 +54,9 @@ MAX_FRAME_WIDTH = int(os.getenv("AI_MAX_FRAME_WIDTH", "960"))
 MIN_FACE_SCORE = float(os.getenv("AI_MIN_FACE_SCORE", "0.45"))
 MAX_FRAMES = int(os.getenv("AI_MAX_FRAMES", "900"))
 MAX_FACES_PER_FRAME = int(os.getenv("AI_MAX_FACES_PER_FRAME", "12"))
+MAX_FACE_WIDTH_RATIO = float(os.getenv("AI_MAX_FACE_WIDTH_RATIO", "0.28"))
+MAX_FACE_HEIGHT_RATIO = float(os.getenv("AI_MAX_FACE_HEIGHT_RATIO", "0.28"))
+IGNORE_REGIONS_RAW = os.getenv("AI_IGNORE_REGIONS", "0.50,0.05,1.00,0.78")
 EXPECTED_NAMES_RAW = os.getenv("AI_EXPECTED_NAMES", "")
 
 CANONICAL = np.array([
@@ -74,7 +77,9 @@ print(
     f"max_frame_width={MAX_FRAME_WIDTH}",
     f"min_face_score={MIN_FACE_SCORE}",
     f"max_frames={MAX_FRAMES or 'unlimited'}",
-    f"max_faces_per_frame={MAX_FACES_PER_FRAME or 'unlimited'}"
+    f"max_faces_per_frame={MAX_FACES_PER_FRAME or 'unlimited'}",
+    f"max_face_ratio={MAX_FACE_WIDTH_RATIO}x{MAX_FACE_HEIGHT_RATIO}",
+    f"ignore_regions={IGNORE_REGIONS_RAW or 'none'}"
 )
 
 # ===== LOAD VIDEO =====
@@ -111,6 +116,34 @@ def normalize_name(name):
     return str(name or "").strip().lower()
 
 
+def parse_ignore_regions(raw):
+    regions = []
+
+    for chunk in str(raw or "").split(";"):
+        parts = [part.strip() for part in chunk.split(",")]
+
+        if len(parts) != 4:
+            continue
+
+        try:
+            left, top, right, bottom = [float(part) for part in parts]
+        except ValueError:
+            continue
+
+        left = max(0.0, min(1.0, left))
+        top = max(0.0, min(1.0, top))
+        right = max(0.0, min(1.0, right))
+        bottom = max(0.0, min(1.0, bottom))
+
+        if right > left and bottom > top:
+            regions.append((left, top, right, bottom))
+
+    return regions
+
+
+IGNORE_REGIONS = parse_ignore_regions(IGNORE_REGIONS_RAW)
+
+
 known_name_by_normalized = {
     normalize_name(item["name"]): item["name"]
     for item in known_data
@@ -130,6 +163,9 @@ print("Known students:", ", ".join(sorted({item["name"] for item in known_data})
 
 if expected_names:
     print("Limiting AI matching to seated students:", ", ".join(sorted(expected_names)))
+
+if IGNORE_REGIONS:
+    print("Ignoring camera regions:", IGNORE_REGIONS)
 
 
 def cosine_distance(a, b):
@@ -189,6 +225,26 @@ def detect_faces(frame):
 
     if faces is None:
         return []
+
+    filtered_faces = []
+
+    for face in faces:
+        x, y, w, h = face[:4]
+        cx = (x + w / 2) / width
+        cy = (y + h / 2) / height
+
+        if MAX_FACE_WIDTH_RATIO > 0 and (w / width) > MAX_FACE_WIDTH_RATIO:
+            continue
+
+        if MAX_FACE_HEIGHT_RATIO > 0 and (h / height) > MAX_FACE_HEIGHT_RATIO:
+            continue
+
+        if any(left <= cx <= right and top <= cy <= bottom for left, top, right, bottom in IGNORE_REGIONS):
+            continue
+
+        filtered_faces.append(face)
+
+    faces = filtered_faces
 
     if MAX_FACES_PER_FRAME > 0 and len(faces) > MAX_FACES_PER_FRAME:
         faces = sorted(faces, key=lambda face: face[-1], reverse=True)
