@@ -16,20 +16,24 @@
     },
     {
       "name": "hassan",
-      "samples": 60
+      "samples": 56
     },
     {
       "name": "karim",
       "samples": 64
     },
     {
-      "name": "mohammad",
-      "samples": 88
+      "name": "mohammad1",
+      "samples": 72
+    },
+    {
+      "name": "reda",
+      "samples": 76
     },
     {
       "name": "sajed",
       "samples": 40
     }
   ],
-  "total_embeddings": 548
+  "total_embeddings": 604
 }

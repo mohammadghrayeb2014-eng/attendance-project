@@ -6,6 +6,7 @@ const ACTIVE_KEY = "active_assignment";
 
 const API = "/api";
 const MAX_VIDEO_UPLOAD_BYTES = 30 * 1024 * 1024;
+const STRICT_AI_ATTENDANCE = true;
 
 let camTimer = null;
 let camConnected = false;
@@ -471,7 +472,7 @@ function applyAiAttendanceResults(aiResults) {
 
   let totalConfidence = 0;
   let matchedStudents = 0;
-  let predictedStudents = 0;
+  let unmatchedStudents = 0;
   let reviewStudents = 0;
 
   rows.forEach(tr => {
@@ -527,19 +528,19 @@ function applyAiAttendanceResults(aiResults) {
       matchedStudents++;
 
     } else {
-      predictedStudents++;
+      unmatchedStudents++;
 
       accuracyCell.innerHTML = `
-        <span class="status status-warning" style="font-size: 0.7rem;">
-          Predicted Present
+        <span class="status status-danger" style="font-size: 0.7rem;">
+          No AI Match
         </span>
       `;
 
-      statusTag.textContent = "Present";
-      statusTag.className = "tag tag-present";
+      statusTag.textContent = STRICT_AI_ATTENDANCE ? "Absent" : "Present";
+      statusTag.className = STRICT_AI_ATTENDANCE ? "tag tag-absent" : "tag tag-present";
 
       if (actionBtn) {
-        actionBtn.textContent = "Mark Absent";
+        actionBtn.textContent = STRICT_AI_ATTENDANCE ? "Mark Present" : "Mark Absent";
       }
     }
   });
@@ -554,7 +555,7 @@ function applyAiAttendanceResults(aiResults) {
         <div>
           <div class="accuracy-label">AI Attendance Review</div>
           <div style="font-size: 0.8rem; color: var(--text-secondary);">
-            ${matchedStudents} face matches, ${predictedStudents} roster predictions
+            ${matchedStudents} face matches, ${unmatchedStudents} no match
           </div>
         </div>
         <div class="accuracy-value">${avgConfidence.toFixed(1)}%</div>
@@ -562,8 +563,8 @@ function applyAiAttendanceResults(aiResults) {
     `;
   } else {
     accBox.innerHTML = `
-      <div class="tag tag-present">
-        ${predictedStudents}/${reviewStudents} seated students predicted present from roster
+      <div class="tag tag-absent">
+        0/${reviewStudents} seated students matched by AI
       </div>
     `;
   }
