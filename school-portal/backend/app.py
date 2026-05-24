@@ -51,7 +51,7 @@ ROBOFLOW_WORKFLOW_URL = os.getenv(
     "https://detect.roboflow.com/infer/workflows/smart-classroom/detect-and-classify"
 ).strip()
 ROBOFLOW_IMAGE_INPUT_NAME = os.getenv("ROBOFLOW_IMAGE_INPUT_NAME", "image").strip() or "image"
-ROBOFLOW_WORKFLOW_PAYLOAD = os.getenv("ROBOFLOW_WORKFLOW_PAYLOAD", "auto").strip().lower() or "auto"
+ROBOFLOW_WORKFLOW_PAYLOAD = os.getenv("ROBOFLOW_WORKFLOW_PAYLOAD", "workflow").strip().lower() or "workflow"
 PHONE_DETECTION_MAX_FRAMES = int(os.getenv("PHONE_DETECTION_MAX_FRAMES", "40"))
 PHONE_DETECTION_USE_TILES = os.getenv("PHONE_DETECTION_USE_TILES", "1") != "0"
 PHONE_DETECTION_TILE_GRID = os.getenv("PHONE_DETECTION_TILE_GRID", "2x2").strip().lower()
@@ -450,35 +450,48 @@ def find_detection_items(value):
 
 
 def roboflow_payloads(encoded):
-    candidates = []
-
-    if ROBOFLOW_WORKFLOW_PAYLOAD in {"workflow", "auto"}:
-        candidates.append({
-            "api_key": ROBOFLOW_API_KEY,
-            "inputs": {
-                ROBOFLOW_IMAGE_INPUT_NAME: {
-                    "type": "base64",
-                    "value": encoded
-                }
+    workflow_payload = {
+        "api_key": ROBOFLOW_API_KEY,
+        "inputs": {
+            ROBOFLOW_IMAGE_INPUT_NAME: {
+                "type": "base64",
+                "value": encoded
             }
-        })
+        }
+    }
 
-    if ROBOFLOW_WORKFLOW_PAYLOAD in {"simple", "auto"}:
-        candidates.append({
+    if ROBOFLOW_WORKFLOW_PAYLOAD == "workflow":
+        return [workflow_payload]
+
+    if ROBOFLOW_WORKFLOW_PAYLOAD == "simple":
+        return [{
             "api_key": ROBOFLOW_API_KEY,
             ROBOFLOW_IMAGE_INPUT_NAME: {
                 "type": "base64",
                 "value": encoded
             }
-        })
+        }]
 
-    if ROBOFLOW_WORKFLOW_PAYLOAD in {"image", "auto"}:
-        candidates.append({
+    if ROBOFLOW_WORKFLOW_PAYLOAD == "image":
+        return [{
             "api_key": ROBOFLOW_API_KEY,
             ROBOFLOW_IMAGE_INPUT_NAME: encoded
-        })
+        }]
 
-    return candidates
+    return [workflow_payload]
+
+
+def safe_roboflow_error(text):
+    clean = str(text or "")
+
+    if ROBOFLOW_API_KEY:
+        clean = clean.replace(ROBOFLOW_API_KEY, "<redacted>")
+
+    clean = re.sub(r'("api_key"\s*:\s*")[^"]+', r'\1<redacted>', clean)
+    clean = re.sub(r'("value"\s*:\s*")[^"]{80,}', r'\1<omitted>', clean)
+    clean = re.sub(r'("image"\s*:\s*")[^"]{80,}', r'\1<omitted>', clean)
+
+    return clean[:700]
 
 
 def call_roboflow_phone_workflow(jpg_bytes):
@@ -507,12 +520,11 @@ def call_roboflow_phone_workflow(jpg_bytes):
                 empty_response = response
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
-            last_error = f"Roboflow HTTP {e.code}: {body[:500]}"
+            last_error = f"Roboflow HTTP {e.code}: {safe_roboflow_error(body)}"
         except Exception as e:
-            last_error = str(e)
+            last_error = safe_roboflow_error(str(e))
 
-        if ROBOFLOW_WORKFLOW_PAYLOAD != "auto":
-            break
+        break
 
     if empty_response is not None:
         return empty_response

@@ -1416,7 +1416,11 @@ function wireCameraUI() {
       console.error("Phone detection error:", err);
 
       if (resultEl) {
-        resultEl.innerHTML = `<span class="tag tag-absent">${escapeHtml(err.message)}</span>`;
+        const message = String(err.message || "Phone detection failed.");
+        resultEl.innerHTML = `
+          <span class="tag tag-absent">Phone detection failed</span>
+          <span style="margin-left: 0.5rem;">${escapeHtml(message.slice(0, 260))}</span>
+        `;
       }
     } finally {
       btn.disabled = false;
