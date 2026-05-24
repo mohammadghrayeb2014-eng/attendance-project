@@ -511,6 +511,22 @@ def response_class_summary(response):
     ]
 
 
+def response_shape(value, depth=0):
+    if depth > 2:
+        return type(value).__name__
+
+    if isinstance(value, dict):
+        return {
+            key: response_shape(child, depth + 1)
+            for key, child in list(value.items())[:12]
+        }
+
+    if isinstance(value, list):
+        return [response_shape(value[0], depth + 1)] if value else []
+
+    return type(value).__name__
+
+
 def sampled_video_frames(video_path, max_frames):
     import cv2
     import numpy as np
@@ -553,10 +569,14 @@ def run_phone_detection(video_path):
     total_phones = 0
     best_confidence = 0.0
     class_summary = {}
+    response_shapes = []
 
     for frame_number, frame_width, frame_height, jpg_bytes in sampled_video_frames(video_path, PHONE_DETECTION_MAX_FRAMES):
         response = call_roboflow_phone_workflow(jpg_bytes)
         detections = phone_detections_from_response(response)
+
+        if len(response_shapes) < 3:
+            response_shapes.append(response_shape(response))
 
         for item in response_class_summary(response):
             current = class_summary.setdefault(item["class"], {
@@ -598,6 +618,7 @@ def run_phone_detection(video_path):
                 reverse=True
             )
         ][:12],
+        "response_shapes": response_shapes,
         "frames": frame_results
     }
 

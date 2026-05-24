@@ -839,6 +839,9 @@ function renderPhoneDetectionResult(data) {
   const noLabelsText = !classesText && !data.phone_detected
     ? "Roboflow returned no usable labels"
     : "";
+  const shapeText = !classesText && Array.isArray(data.response_shapes) && data.response_shapes.length
+    ? `Response shape: ${JSON.stringify(data.response_shapes[0]).slice(0, 180)}`
+    : "";
 
   highlightPhoneSeats(seatLabels);
 
@@ -862,6 +865,11 @@ function renderPhoneDetectionResult(data) {
     ${noLabelsText ? `
       <div style="margin-top: 0.25rem;">
         ${escapeHtml(noLabelsText)}
+      </div>
+    ` : ""}
+    ${shapeText ? `
+      <div style="margin-top: 0.25rem; font-size: 0.75rem;">
+        ${escapeHtml(shapeText)}
       </div>
     ` : ""}
   `;
