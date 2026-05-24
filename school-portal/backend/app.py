@@ -346,6 +346,33 @@ def find_detection_items(value):
     items = []
 
     if isinstance(value, dict):
+        detection_keys = {
+            "class", "class_name", "label", "name", "top", "predicted_class",
+            "confidence", "score", "probability", "x", "y", "width", "height", "w", "h"
+        }
+        looks_like_probability_map = (
+            value
+            and not (set(value.keys()) & detection_keys)
+            and any(isinstance(item, (int, float)) for item in value.values())
+            and all(isinstance(item, (int, float, str)) for item in value.values())
+        )
+
+        if looks_like_probability_map:
+            for label, confidence in value.items():
+                try:
+                    confidence = float(confidence)
+                except Exception:
+                    continue
+
+                items.append({
+                    "class": str(label),
+                    "confidence": confidence,
+                    "x": None,
+                    "y": None,
+                    "width": None,
+                    "height": None
+                })
+
         label = (
             value.get("class")
             or value.get("class_name")
@@ -358,6 +385,9 @@ def find_detection_items(value):
 
         if confidence is None and isinstance(value.get("predictions"), dict) and label:
             confidence = value["predictions"].get(str(label))
+
+        if isinstance(value.get("predictions"), dict):
+            items.extend(find_detection_items(value["predictions"]))
 
         if confidence is None and isinstance(value.get("confidence"), str):
             confidence = value.get("confidence")
