@@ -57,7 +57,15 @@ PHONE_DETECTION_CLASSES = {
     item.strip().lower()
     for item in os.getenv(
         "PHONE_DETECTION_CLASSES",
-        "phone,cell phone,mobile phone,smartphone"
+        "phone,cell phone,mobile phone,smartphone,using phone,cellphone"
+    ).split(",")
+    if item.strip()
+}
+PHONE_DETECTION_NEGATIVE_CLASSES = {
+    item.strip().lower()
+    for item in os.getenv(
+        "PHONE_DETECTION_NEGATIVE_CLASSES",
+        "no phone,no_phone,no-phone,not phone,without phone"
     ).split(",")
     if item.strip()
 }
@@ -390,13 +398,28 @@ def call_roboflow_phone_workflow(jpg_bytes):
     return json.loads(text) if text else {}
 
 
+def is_phone_label(label):
+    clean = str(label or "").strip().lower()
+
+    if not clean:
+        return False
+
+    if clean in PHONE_DETECTION_NEGATIVE_CLASSES:
+        return False
+
+    if any(negative in clean for negative in PHONE_DETECTION_NEGATIVE_CLASSES):
+        return False
+
+    return clean in PHONE_DETECTION_CLASSES or any(item in clean for item in PHONE_DETECTION_CLASSES)
+
+
 def phone_detections_from_response(response):
     detections = []
 
     for item in find_detection_items(response):
         label = item["class"].strip().lower()
 
-        if label not in PHONE_DETECTION_CLASSES:
+        if not is_phone_label(label):
             continue
 
         if item["confidence"] < PHONE_DETECTION_CONFIDENCE:
@@ -406,6 +429,36 @@ def phone_detections_from_response(response):
 
     detections.sort(key=lambda item: item["confidence"], reverse=True)
     return detections
+
+
+def response_class_summary(response):
+    summary = {}
+
+    for item in find_detection_items(response):
+        label = item["class"].strip().lower()
+
+        if not label:
+            continue
+
+        current = summary.setdefault(label, {
+            "count": 0,
+            "best_confidence": 0.0
+        })
+        current["count"] += 1
+        current["best_confidence"] = max(current["best_confidence"], item["confidence"])
+
+    return [
+        {
+            "class": label,
+            "count": values["count"],
+            "best_confidence": round(values["best_confidence"], 4)
+        }
+        for label, values in sorted(
+            summary.items(),
+            key=lambda pair: pair[1]["best_confidence"],
+            reverse=True
+        )
+    ]
 
 
 def sampled_video_frames(video_path, max_frames):
@@ -449,10 +502,19 @@ def run_phone_detection(video_path):
     phone_frames = 0
     total_phones = 0
     best_confidence = 0.0
+    class_summary = {}
 
     for frame_number, frame_width, frame_height, jpg_bytes in sampled_video_frames(video_path, PHONE_DETECTION_MAX_FRAMES):
         response = call_roboflow_phone_workflow(jpg_bytes)
         detections = phone_detections_from_response(response)
+
+        for item in response_class_summary(response):
+            current = class_summary.setdefault(item["class"], {
+                "count": 0,
+                "best_confidence": 0.0
+            })
+            current["count"] += item["count"]
+            current["best_confidence"] = max(current["best_confidence"], item["best_confidence"])
 
         if detections:
             phone_frames += 1
@@ -474,6 +536,18 @@ def run_phone_detection(video_path):
         "phone_frames": phone_frames,
         "total_phones": total_phones,
         "best_confidence": round(best_confidence, 4),
+        "classes_seen": [
+            {
+                "class": label,
+                "count": values["count"],
+                "best_confidence": round(values["best_confidence"], 4)
+            }
+            for label, values in sorted(
+                class_summary.items(),
+                key=lambda pair: pair[1]["best_confidence"],
+                reverse=True
+            )
+        ][:12],
         "frames": frame_results
     }
 

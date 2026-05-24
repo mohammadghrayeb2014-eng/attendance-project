@@ -832,6 +832,10 @@ function renderPhoneDetectionResult(data) {
   const statusClass = data.phone_detected ? "tag tag-absent" : "tag tag-present";
   const statusText = data.phone_detected ? "Phone detected" : "No phone detected";
   const seatLabels = phoneDetectionSeatLabels(data);
+  const classesSeen = Array.isArray(data.classes_seen) ? data.classes_seen.slice(0, 4) : [];
+  const classesText = classesSeen
+    .map(item => `${item.class} ${(Number(item.best_confidence || 0) * 100).toFixed(0)}%`)
+    .join(", ");
 
   highlightPhoneSeats(seatLabels);
 
@@ -846,6 +850,11 @@ function renderPhoneDetectionResult(data) {
       <span style="margin-left: 0.5rem;">
         seats: ${escapeHtml(seatLabels.join(", "))}
       </span>
+    ` : ""}
+    ${classesText ? `
+      <div style="margin-top: 0.25rem;">
+        Roboflow saw: ${escapeHtml(classesText)}
+      </div>
     ` : ""}
   `;
 }
