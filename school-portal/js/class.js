@@ -853,7 +853,7 @@ function renderPhoneDetectionResult(data) {
     <span style="margin-left: 0.5rem;">
       phones: ${data.total_phones || 0},
       frames: ${data.phone_frames || 0}/${data.frames_checked || 0},
-      best ${confidenceText}
+      best ${confidenceText}${data.tiles_enabled ? `, tiles ${escapeHtml(data.tile_grid || "on")}` : ""}
     </span>
     ${seatLabels.length ? `
       <span style="margin-left: 0.5rem;">

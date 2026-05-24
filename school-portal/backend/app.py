@@ -53,6 +53,8 @@ ROBOFLOW_WORKFLOW_URL = os.getenv(
 ROBOFLOW_IMAGE_INPUT_NAME = os.getenv("ROBOFLOW_IMAGE_INPUT_NAME", "image").strip() or "image"
 ROBOFLOW_WORKFLOW_PAYLOAD = os.getenv("ROBOFLOW_WORKFLOW_PAYLOAD", "auto").strip().lower() or "auto"
 PHONE_DETECTION_MAX_FRAMES = int(os.getenv("PHONE_DETECTION_MAX_FRAMES", "40"))
+PHONE_DETECTION_USE_TILES = os.getenv("PHONE_DETECTION_USE_TILES", "1") != "0"
+PHONE_DETECTION_TILE_GRID = os.getenv("PHONE_DETECTION_TILE_GRID", "2x2").strip().lower()
 PHONE_DETECTION_CONFIDENCE = float(os.getenv("PHONE_DETECTION_CONFIDENCE", "0.35"))
 PHONE_DETECTION_CLASSES = {
     item.strip().lower()
@@ -597,6 +599,38 @@ def response_shape(value, depth=0):
     return type(value).__name__
 
 
+def normalize_detection_coordinates(detections, sample):
+    normalized = []
+
+    for detection in detections:
+        item = dict(detection)
+        x = item.get("x")
+        y = item.get("y")
+
+        try:
+            if x is not None:
+                x = float(x)
+
+                if x <= 1:
+                    x = x * sample["region_width"]
+
+                item["x"] = sample["offset_x"] + x
+
+            if y is not None:
+                y = float(y)
+
+                if y <= 1:
+                    y = y * sample["region_height"]
+
+                item["y"] = sample["offset_y"] + y
+        except Exception:
+            pass
+
+        normalized.append(item)
+
+    return normalized
+
+
 def scrub_roboflow_debug(value, depth=0):
     if depth > 5:
         return type(value).__name__
@@ -622,6 +656,73 @@ def scrub_roboflow_debug(value, depth=0):
         return value[:160]
 
     return value
+
+
+def encode_frame_jpg(frame):
+    import cv2
+
+    ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
+
+    return encoded.tobytes() if ok else None
+
+
+def parse_tile_grid(raw):
+    match = re.fullmatch(r"(\d+)x(\d+)", str(raw or "").strip().lower())
+
+    if not match:
+        return 2, 2
+
+    cols = max(1, min(4, int(match.group(1))))
+    rows = max(1, min(4, int(match.group(2))))
+    return cols, rows
+
+
+def frame_image_samples(frame):
+    height, width = frame.shape[:2]
+    full_jpg = encode_frame_jpg(frame)
+
+    if full_jpg:
+        yield {
+            "region": "full",
+            "frame_width": width,
+            "frame_height": height,
+            "offset_x": 0,
+            "offset_y": 0,
+            "region_width": width,
+            "region_height": height,
+            "jpg": full_jpg
+        }
+
+    if not PHONE_DETECTION_USE_TILES:
+        return
+
+    cols, rows = parse_tile_grid(PHONE_DETECTION_TILE_GRID)
+
+    for row in range(rows):
+        top = int(row * height / rows)
+        bottom = int((row + 1) * height / rows)
+
+        for col in range(cols):
+            left = int(col * width / cols)
+            right = int((col + 1) * width / cols)
+            crop = frame[top:bottom, left:right]
+
+            if crop.size == 0:
+                continue
+
+            jpg = encode_frame_jpg(crop)
+
+            if jpg:
+                yield {
+                    "region": f"tile_{row + 1}_{col + 1}",
+                    "frame_width": width,
+                    "frame_height": height,
+                    "offset_x": left,
+                    "offset_y": top,
+                    "region_width": right - left,
+                    "region_height": bottom - top,
+                    "jpg": jpg
+                }
 
 
 def sampled_video_frames(video_path, max_frames):
@@ -651,11 +752,8 @@ def sampled_video_frames(video_path, max_frames):
             if not ok:
                 continue
 
-            height, width = frame.shape[:2]
-            ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
-
-            if ok:
-                yield frame_number, width, height, encoded.tobytes()
+            for sample in frame_image_samples(frame):
+                yield frame_number, sample
     finally:
         cap.release()
 
@@ -669,9 +767,14 @@ def run_phone_detection(video_path):
     response_shapes = []
     debug_samples = []
 
-    for frame_number, frame_width, frame_height, jpg_bytes in sampled_video_frames(video_path, PHONE_DETECTION_MAX_FRAMES):
-        response = call_roboflow_phone_workflow(jpg_bytes)
-        detections = phone_detections_from_response(response)
+    frame_map = {}
+
+    for frame_number, sample in sampled_video_frames(video_path, PHONE_DETECTION_MAX_FRAMES):
+        response = call_roboflow_phone_workflow(sample["jpg"])
+        detections = normalize_detection_coordinates(
+            phone_detections_from_response(response),
+            sample
+        )
 
         if len(response_shapes) < 3:
             response_shapes.append(response_shape(response))
@@ -688,17 +791,25 @@ def run_phone_detection(video_path):
             current["best_confidence"] = max(current["best_confidence"], item["best_confidence"])
 
         if detections:
-            phone_frames += 1
             total_phones += len(detections)
             best_confidence = max(best_confidence, detections[0]["confidence"])
 
-        frame_results.append({
+        frame_item = frame_map.setdefault(frame_number, {
             "frame": frame_number,
-            "frame_width": frame_width,
-            "frame_height": frame_height,
-            "phone_count": len(detections),
-            "detections": detections[:8]
+            "frame_width": sample["frame_width"],
+            "frame_height": sample["frame_height"],
+            "phone_count": 0,
+            "regions_checked": [],
+            "detections": []
         })
+        frame_item["regions_checked"].append(sample["region"])
+        frame_item["detections"].extend(detections)
+        frame_item["detections"].sort(key=lambda item: item["confidence"], reverse=True)
+        frame_item["detections"] = frame_item["detections"][:8]
+        frame_item["phone_count"] = len(frame_item["detections"])
+
+    frame_results = list(frame_map.values())
+    phone_frames = sum(1 for item in frame_results if item["phone_count"] > 0)
 
     result = {
         "success": True,
@@ -707,6 +818,8 @@ def run_phone_detection(video_path):
         "phone_frames": phone_frames,
         "total_phones": total_phones,
         "best_confidence": round(best_confidence, 4),
+        "tiles_enabled": PHONE_DETECTION_USE_TILES,
+        "tile_grid": PHONE_DETECTION_TILE_GRID if PHONE_DETECTION_USE_TILES else "off",
         "classes_seen": [
             {
                 "class": label,
