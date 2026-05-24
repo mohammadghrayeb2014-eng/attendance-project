@@ -476,6 +476,10 @@ function applyAiAttendanceResults(aiResults) {
   const returnedNames = aiResults
     .map(r => String(r.name || r.username || "").trim())
     .filter(Boolean);
+  const presentNames = aiResults
+    .filter(r => r.present === "YES" || r.status === "Present")
+    .map(r => String(r.name || r.username || "").trim())
+    .filter(Boolean);
 
   let totalConfidence = 0;
   let matchedStudents = 0;
@@ -544,9 +548,11 @@ function applyAiAttendanceResults(aiResults) {
     } else {
       unmatchedStudents++;
 
+      const noMatchText = aiRecord ? "AI Says Absent" : "No AI Result";
+
       accuracyCell.innerHTML = `
         <span class="status status-danger" style="font-size: 0.7rem;">
-          No AI Match
+          ${noMatchText}
         </span>
       `;
 
@@ -571,13 +577,19 @@ function applyAiAttendanceResults(aiResults) {
           <div style="font-size: 0.8rem; color: var(--text-secondary);">
             ${matchedStudents} face matches, ${unmatchedStudents} no match
           </div>
+          <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.25rem;">
+            AI present: ${escapeHtml(presentNames.join(", "))}
+          </div>
         </div>
         <div class="accuracy-value">${avgConfidence.toFixed(1)}%</div>
       </div>
     `;
   } else {
-    const returnedText = returnedNames.length
-      ? `AI returned: ${returnedNames.slice(0, 6).join(", ")}${returnedNames.length > 6 ? "..." : ""}`
+    const presentText = presentNames.length
+      ? `AI present: ${presentNames.join(", ")}`
+      : "AI present: none";
+    const checkedText = returnedNames.length
+      ? `AI checked: ${returnedNames.slice(0, 6).join(", ")}${returnedNames.length > 6 ? "..." : ""}`
       : "AI returned no student rows";
 
     accBox.innerHTML = `
@@ -585,7 +597,10 @@ function applyAiAttendanceResults(aiResults) {
         0/${reviewStudents} seated students matched by AI
       </div>
       <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.35rem;">
-        ${escapeHtml(returnedText)}
+        ${escapeHtml(presentText)}
+      </div>
+      <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">
+        ${escapeHtml(checkedText)}
       </div>
     `;
   }
