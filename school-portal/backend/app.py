@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime
 from uuid import uuid4
 from types import SimpleNamespace
+import base64
 import os
 import csv
 import json
@@ -15,6 +16,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 import bcrypt
 import secrets
@@ -37,10 +39,28 @@ OUTPUT_ATT = ROOT / "output" / "attendance"
 ATT_CSV = OUTPUT_ATT / "attendance.csv"
 MASTER_CSV = OUTPUT_ATT / "master_attendance.csv"
 VIDEO_UPLOAD_DIR = ROOT / "data" / "classroom_videos"
+PHONE_VIDEO_UPLOAD_DIR = ROOT / "data" / "phone_detection_videos"
+PHONE_OUTPUT_DIR = ROOT / "output" / "phone_detection"
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(30 * 1024 * 1024)))
 GCS_VIDEO_BUCKET = os.getenv("GCS_VIDEO_BUCKET", "").strip()
 METADATA_HEADERS = {"Metadata-Flavor": "Google"}
+ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY", "").strip()
+ROBOFLOW_WORKFLOW_URL = os.getenv(
+    "ROBOFLOW_WORKFLOW_URL",
+    "https://detect.roboflow.com/infer/workflows/smart-classroom/detect-and-classify"
+).strip()
+ROBOFLOW_IMAGE_INPUT_NAME = os.getenv("ROBOFLOW_IMAGE_INPUT_NAME", "image").strip() or "image"
+PHONE_DETECTION_MAX_FRAMES = int(os.getenv("PHONE_DETECTION_MAX_FRAMES", "16"))
+PHONE_DETECTION_CONFIDENCE = float(os.getenv("PHONE_DETECTION_CONFIDENCE", "0.35"))
+PHONE_DETECTION_CLASSES = {
+    item.strip().lower()
+    for item in os.getenv(
+        "PHONE_DETECTION_CLASSES",
+        "phone,cell phone,mobile phone,smartphone"
+    ).split(",")
+    if item.strip()
+}
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
@@ -178,6 +198,14 @@ def clear_uploaded_videos():
             path.unlink()
 
 
+def clear_phone_detection_videos():
+    PHONE_VIDEO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    for path in PHONE_VIDEO_UPLOAD_DIR.iterdir():
+        if path.is_file() and path.suffix.lower() in ALLOWED_VIDEO_EXTENSIONS:
+            path.unlink()
+
+
 def ai_subprocess_env(extra_env=None):
     env = os.environ.copy()
     env.setdefault("PYTHONUNBUFFERED", "1")
@@ -287,6 +315,171 @@ def ai_failure_details(result):
         detail = f"The AI runner exited with code {result.returncode} but did not print an error."
 
     return detail[-1200:]
+
+
+def roboflow_workflow_url():
+    if not ROBOFLOW_API_KEY:
+        raise ValueError("ROBOFLOW_API_KEY is not configured.")
+
+    if not ROBOFLOW_WORKFLOW_URL:
+        raise ValueError("ROBOFLOW_WORKFLOW_URL is not configured.")
+
+    parsed = urllib.parse.urlparse(ROBOFLOW_WORKFLOW_URL)
+    query = urllib.parse.parse_qs(parsed.query)
+
+    if "api_key" not in query:
+        query["api_key"] = [ROBOFLOW_API_KEY]
+
+    return urllib.parse.urlunparse(parsed._replace(query=urllib.parse.urlencode(query, doseq=True)))
+
+
+def find_detection_items(value):
+    items = []
+
+    if isinstance(value, dict):
+        label = value.get("class") or value.get("class_name") or value.get("label") or value.get("name")
+        confidence = value.get("confidence", value.get("score", value.get("probability")))
+
+        if label is not None and confidence is not None:
+            try:
+                confidence = float(confidence)
+            except Exception:
+                confidence = 0.0
+
+            items.append({
+                "class": str(label),
+                "confidence": confidence,
+                "x": value.get("x"),
+                "y": value.get("y"),
+                "width": value.get("width", value.get("w")),
+                "height": value.get("height", value.get("h"))
+            })
+
+        for child in value.values():
+            items.extend(find_detection_items(child))
+
+    elif isinstance(value, list):
+        for child in value:
+            items.extend(find_detection_items(child))
+
+    return items
+
+
+def call_roboflow_phone_workflow(jpg_bytes):
+    encoded = base64.b64encode(jpg_bytes).decode("ascii")
+    payload = {
+        "api_key": ROBOFLOW_API_KEY,
+        "inputs": {
+            ROBOFLOW_IMAGE_INPUT_NAME: {
+                "type": "base64",
+                "value": encoded
+            }
+        }
+    }
+
+    req = urllib.request.Request(
+        roboflow_workflow_url(),
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+
+    with urllib.request.urlopen(req, timeout=45) as res:
+        text = res.read().decode("utf-8", errors="replace")
+
+    return json.loads(text) if text else {}
+
+
+def phone_detections_from_response(response):
+    detections = []
+
+    for item in find_detection_items(response):
+        label = item["class"].strip().lower()
+
+        if label not in PHONE_DETECTION_CLASSES:
+            continue
+
+        if item["confidence"] < PHONE_DETECTION_CONFIDENCE:
+            continue
+
+        detections.append(item)
+
+    detections.sort(key=lambda item: item["confidence"], reverse=True)
+    return detections
+
+
+def sampled_video_frames(video_path, max_frames):
+    import cv2
+    import numpy as np
+
+    cap = cv2.VideoCapture(str(video_path))
+
+    if not cap.isOpened():
+        raise ValueError("Could not open uploaded video.")
+
+    try:
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        sample_count = max(1, min(max_frames, total_frames or max_frames))
+
+        if total_frames > 0:
+            frame_numbers = sorted(set(np.linspace(1, total_frames, sample_count, dtype=int).tolist()))
+        else:
+            frame_numbers = list(range(1, sample_count + 1))
+
+        for frame_number in frame_numbers:
+            if total_frames > 0:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, frame_number - 1))
+
+            ok, frame = cap.read()
+
+            if not ok:
+                continue
+
+            ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+
+            if ok:
+                yield frame_number, encoded.tobytes()
+    finally:
+        cap.release()
+
+
+def run_phone_detection(video_path):
+    frame_results = []
+    phone_frames = 0
+    total_phones = 0
+    best_confidence = 0.0
+
+    for frame_number, jpg_bytes in sampled_video_frames(video_path, PHONE_DETECTION_MAX_FRAMES):
+        response = call_roboflow_phone_workflow(jpg_bytes)
+        detections = phone_detections_from_response(response)
+
+        if detections:
+            phone_frames += 1
+            total_phones += len(detections)
+            best_confidence = max(best_confidence, detections[0]["confidence"])
+
+        frame_results.append({
+            "frame": frame_number,
+            "phone_count": len(detections),
+            "detections": detections[:8]
+        })
+
+    result = {
+        "success": True,
+        "phone_detected": phone_frames > 0,
+        "frames_checked": len(frame_results),
+        "phone_frames": phone_frames,
+        "total_phones": total_phones,
+        "best_confidence": round(best_confidence, 4),
+        "frames": frame_results
+    }
+
+    PHONE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    with (PHONE_OUTPUT_DIR / "phone_detection.json").open("w", encoding="utf-8") as f:
+        json.dump(result, f, indent=2)
+
+    return result
 
 
 def save_uploaded_video_from_gcs(object_name):
@@ -1045,6 +1238,52 @@ def upload_attendance_video():
         "filename": filename,
         "results": attendance_csv_rows(),
         "stdout": result.stdout[-4000:]
+    })
+
+
+@app.post("/api/phone-detection/upload")
+def upload_phone_detection_video():
+    if "file" not in request.files:
+        return jsonify({"success": False, "error": "No video file uploaded"}), 400
+
+    uploaded = request.files["file"]
+
+    if not uploaded or not uploaded.filename:
+        return jsonify({"success": False, "error": "No video file selected"}), 400
+
+    filename = secure_filename(uploaded.filename)
+    suffix = Path(filename).suffix.lower()
+
+    if suffix not in ALLOWED_VIDEO_EXTENSIONS:
+        return jsonify({
+            "success": False,
+            "error": "Unsupported video type. Upload mp4, mov, avi, or mkv."
+        }), 400
+
+    clear_phone_detection_videos()
+    video_path = PHONE_VIDEO_UPLOAD_DIR / filename
+    uploaded.save(video_path)
+
+    try:
+        result = run_phone_detection(video_path)
+    except ValueError as e:
+        return jsonify({
+            "success": False,
+            "filename": filename,
+            "error": str(e)
+        }), 400
+    except Exception as e:
+        app.logger.exception("Phone detection failed")
+        return jsonify({
+            "success": False,
+            "filename": filename,
+            "error": "Phone detection failed.",
+            "details": str(e)
+        }), 500
+
+    return jsonify({
+        **result,
+        "filename": filename
     })
 
 

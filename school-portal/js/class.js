@@ -808,6 +808,60 @@ async function uploadSmallVideoDirectly(file) {
   return data;
 }
 
+function renderPhoneDetectionResult(data) {
+  const target = $("phoneDetectionResult");
+
+  if (!target) return;
+
+  if (!data || !data.success) {
+    target.innerHTML = `<span class="tag tag-absent">Phone detection failed</span>`;
+    return;
+  }
+
+  const confidence = Number(data.best_confidence || 0);
+  const confidenceText = confidence > 0 ? `${(confidence * 100).toFixed(1)}%` : "0%";
+  const statusClass = data.phone_detected ? "tag tag-absent" : "tag tag-present";
+  const statusText = data.phone_detected ? "Phone detected" : "No phone detected";
+
+  target.innerHTML = `
+    <span class="${statusClass}">${statusText}</span>
+    <span style="margin-left: 0.5rem;">
+      ${data.phone_frames || 0}/${data.frames_checked || 0} frames,
+      ${data.total_phones || 0} detection(s),
+      best ${confidenceText}
+    </span>
+  `;
+}
+
+async function uploadPhoneDetectionVideo(file) {
+  if (file.size > MAX_VIDEO_UPLOAD_BYTES) {
+    throw new Error("Phone detection uploads are limited to 30 MB. Use a shorter clip.");
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  let res;
+
+  try {
+    res = await fetch(`${API}/phone-detection/upload`, {
+      method: "POST",
+      body: formData
+    });
+  } catch (err) {
+    throw new Error(`Could not upload video for phone detection. ${err.message}`);
+  }
+
+  const data = await readResponse(res);
+
+  if (!res.ok || !data.success) {
+    const detail = data.details ? ` ${data.details}` : "";
+    throw new Error(`${data.error || "Phone detection failed."}${detail}`);
+  }
+
+  return data;
+}
+
 /* =========================================================
    SEAT MODAL
    ========================================================= */
@@ -1190,6 +1244,7 @@ function wireCameraUI() {
 
   $("runAiBtn").addEventListener("click", () => $("videoUpload").click());
   $("uploadTriggerBtn").addEventListener("click", () => $("videoUpload").click());
+  $("phoneDetectBtn").addEventListener("click", () => $("phoneVideoUpload").click());
 
   $("videoUpload").addEventListener("change", async (e) => {
     const file = e.target.files[0];
@@ -1223,6 +1278,38 @@ function wireCameraUI() {
       btn.innerHTML = originalHtml;
       aiBtn.disabled = false;
       aiBtn.innerHTML = originalAiHtml;
+      e.target.value = "";
+    }
+  });
+
+  $("phoneVideoUpload").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+
+    if (!file) return;
+
+    const btn = $("phoneDetectBtn");
+    const resultEl = $("phoneDetectionResult");
+    const originalHtml = btn.innerHTML;
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Detecting Phones...';
+
+    if (resultEl) {
+      resultEl.textContent = "Detecting phones...";
+    }
+
+    try {
+      const data = await uploadPhoneDetectionVideo(file);
+      renderPhoneDetectionResult(data);
+    } catch (err) {
+      console.error("Phone detection error:", err);
+
+      if (resultEl) {
+        resultEl.innerHTML = `<span class="tag tag-absent">${escapeHtml(err.message)}</span>`;
+      }
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
       e.target.value = "";
     }
   });
