@@ -52,7 +52,7 @@ ROBOFLOW_WORKFLOW_URL = os.getenv(
 ).strip()
 ROBOFLOW_IMAGE_INPUT_NAME = os.getenv("ROBOFLOW_IMAGE_INPUT_NAME", "image").strip() or "image"
 ROBOFLOW_WORKFLOW_PAYLOAD = os.getenv("ROBOFLOW_WORKFLOW_PAYLOAD", "auto").strip().lower() or "auto"
-PHONE_DETECTION_MAX_FRAMES = int(os.getenv("PHONE_DETECTION_MAX_FRAMES", "16"))
+PHONE_DETECTION_MAX_FRAMES = int(os.getenv("PHONE_DETECTION_MAX_FRAMES", "40"))
 PHONE_DETECTION_CONFIDENCE = float(os.getenv("PHONE_DETECTION_CONFIDENCE", "0.35"))
 PHONE_DETECTION_CLASSES = {
     item.strip().lower()
@@ -482,6 +482,7 @@ def roboflow_payloads(encoded):
 def call_roboflow_phone_workflow(jpg_bytes):
     encoded = base64.b64encode(jpg_bytes).decode("ascii")
     last_error = None
+    empty_response = None
 
     for payload in roboflow_payloads(encoded):
         req = urllib.request.Request(
@@ -495,7 +496,13 @@ def call_roboflow_phone_workflow(jpg_bytes):
             with urllib.request.urlopen(req, timeout=45) as res:
                 text = res.read().decode("utf-8", errors="replace")
 
-            return json.loads(text) if text else {}
+            response = json.loads(text) if text else {}
+
+            if find_detection_items(response):
+                return response
+
+            if empty_response is None:
+                empty_response = response
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
             last_error = f"Roboflow HTTP {e.code}: {body[:500]}"
@@ -504,6 +511,9 @@ def call_roboflow_phone_workflow(jpg_bytes):
 
         if ROBOFLOW_WORKFLOW_PAYLOAD != "auto":
             break
+
+    if empty_response is not None:
+        return empty_response
 
     raise RuntimeError(last_error or "Roboflow request failed.")
 
