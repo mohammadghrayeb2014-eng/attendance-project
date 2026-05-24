@@ -16,6 +16,9 @@ let sessionState = "IDLE";
 
 let allStudents = [];
 let currentSaveCallback = null;
+let currentSeatRows = 0;
+let currentSeatCols = 0;
+let currentSeating = {};
 
 function $(id) {
   return document.getElementById(id);
@@ -133,6 +136,9 @@ async function loadSession() {
 
 function renderGrid(rows, cols, seating, classId) {
   const grid = $("seatGrid");
+  currentSeatRows = rows;
+  currentSeatCols = cols;
+  currentSeating = seating || {};
 
   grid.innerHTML = "";
   grid.style.display = "grid";
@@ -164,6 +170,7 @@ function renderGrid(rows, cols, seating, classId) {
       const studentName = seatDisplayName(seatValue);
       const studentUser = seatUsername(seatValue);
       const seatLabel = `${String.fromCharCode(65 + r)}${c + 1}`;
+      seat.dataset.seatLabel = seatLabel;
 
       if (studentName !== "Empty") {
         seat.classList.add("occupied");
@@ -818,19 +825,90 @@ function renderPhoneDetectionResult(data) {
     return;
   }
 
+  clearPhoneSeatHighlights();
+
   const confidence = Number(data.best_confidence || 0);
   const confidenceText = confidence > 0 ? `${(confidence * 100).toFixed(1)}%` : "0%";
   const statusClass = data.phone_detected ? "tag tag-absent" : "tag tag-present";
   const statusText = data.phone_detected ? "Phone detected" : "No phone detected";
+  const seatLabels = phoneDetectionSeatLabels(data);
+
+  highlightPhoneSeats(seatLabels);
 
   target.innerHTML = `
     <span class="${statusClass}">${statusText}</span>
     <span style="margin-left: 0.5rem;">
-      ${data.phone_frames || 0}/${data.frames_checked || 0} frames,
-      ${data.total_phones || 0} detection(s),
+      phones: ${data.total_phones || 0},
+      frames: ${data.phone_frames || 0}/${data.frames_checked || 0},
       best ${confidenceText}
     </span>
+    ${seatLabels.length ? `
+      <span style="margin-left: 0.5rem;">
+        seats: ${escapeHtml(seatLabels.join(", "))}
+      </span>
+    ` : ""}
   `;
+}
+
+function detectionCenter(value, size) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) return null;
+
+  return Math.max(0, Math.min(1, number <= 1 ? number : number / Math.max(1, size)));
+}
+
+function phoneDetectionSeatLabels(data) {
+  if (!currentSeatRows || !currentSeatCols || !Array.isArray(data?.frames)) {
+    return [];
+  }
+
+  const labels = new Set();
+
+  data.frames.forEach(frame => {
+    const frameWidth = Number(frame.frame_width || 0);
+    const frameHeight = Number(frame.frame_height || 0);
+
+    (frame.detections || []).forEach(detection => {
+      const centerX = detectionCenter(detection.x, frameWidth);
+      const centerY = detectionCenter(detection.y, frameHeight);
+
+      if (centerX === null || centerY === null) return;
+
+      const col = Math.max(0, Math.min(currentSeatCols - 1, Math.floor(centerX * currentSeatCols)));
+      const row = Math.max(0, Math.min(currentSeatRows - 1, Math.floor(centerY * currentSeatRows)));
+      const seatLabel = `${String.fromCharCode(65 + row)}${col + 1}`;
+      const seatKey = `${row}_${col}`;
+      const seatValue = currentSeating[seatKey];
+
+      labels.add(`${seatLabel}${seatDisplayName(seatValue) !== "Empty" ? ` ${seatDisplayName(seatValue)}` : ""}`);
+    });
+  });
+
+  return Array.from(labels).slice(0, 8);
+}
+
+function clearPhoneSeatHighlights() {
+  document.querySelectorAll(".seat.phone-detected").forEach(seat => {
+    seat.classList.remove("phone-detected");
+    seat.style.boxShadow = "";
+    seat.style.borderColor = "";
+  });
+}
+
+function highlightPhoneSeats(labels) {
+  clearPhoneSeatHighlights();
+
+  labels.forEach(label => {
+    const seatLabel = label.split(" ")[0];
+    const seat = document.querySelector(`.seat[data-seat-label="${CSS.escape(seatLabel)}"]`);
+
+    if (!seat) return;
+
+    seat.classList.add("phone-detected");
+    seat.style.borderColor = "#f87171";
+    seat.style.boxShadow = "0 0 0 2px rgba(248, 113, 113, 0.35)";
+  });
 }
 
 async function uploadPhoneDetectionVideo(file) {

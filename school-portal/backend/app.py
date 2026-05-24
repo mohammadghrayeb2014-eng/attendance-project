@@ -435,10 +435,11 @@ def sampled_video_frames(video_path, max_frames):
             if not ok:
                 continue
 
+            height, width = frame.shape[:2]
             ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
 
             if ok:
-                yield frame_number, encoded.tobytes()
+                yield frame_number, width, height, encoded.tobytes()
     finally:
         cap.release()
 
@@ -449,7 +450,7 @@ def run_phone_detection(video_path):
     total_phones = 0
     best_confidence = 0.0
 
-    for frame_number, jpg_bytes in sampled_video_frames(video_path, PHONE_DETECTION_MAX_FRAMES):
+    for frame_number, frame_width, frame_height, jpg_bytes in sampled_video_frames(video_path, PHONE_DETECTION_MAX_FRAMES):
         response = call_roboflow_phone_workflow(jpg_bytes)
         detections = phone_detections_from_response(response)
 
@@ -460,6 +461,8 @@ def run_phone_detection(video_path):
 
         frame_results.append({
             "frame": frame_number,
+            "frame_width": frame_width,
+            "frame_height": frame_height,
             "phone_count": len(detections),
             "detections": detections[:8]
         })
