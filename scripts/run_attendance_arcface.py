@@ -51,7 +51,7 @@ DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_NAME = "ArcFace"
 THRESHOLD = float(os.getenv("AI_MATCH_THRESHOLD", "0.45"))
 PARTIAL_FACE_THRESHOLD = float(os.getenv("AI_PARTIAL_FACE_THRESHOLD", "0.45"))
-MIN_MATCH_MARGIN = float(os.getenv("AI_MIN_MATCH_MARGIN", "0.02"))
+MIN_MATCH_MARGIN = float(os.getenv("AI_MIN_MATCH_MARGIN", "0.001"))
 MATCH_TOP_K = int(os.getenv("AI_MATCH_TOP_K", "3"))
 PROCESS_EVERY_N_FRAMES = int(os.getenv("AI_PROCESS_EVERY_N_FRAMES", "6"))
 MIN_HITS = int(os.getenv("AI_MIN_HITS", "2"))
