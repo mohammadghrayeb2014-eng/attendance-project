@@ -587,6 +587,33 @@ def response_shape(value, depth=0):
     return type(value).__name__
 
 
+def scrub_roboflow_debug(value, depth=0):
+    if depth > 5:
+        return type(value).__name__
+
+    if isinstance(value, dict):
+        scrubbed = {}
+
+        for key, child in list(value.items())[:20]:
+            key_text = str(key)
+
+            if key_text.lower() in {"image", "output_image", "value", "base64"}:
+                scrubbed[key_text] = "<omitted>"
+                continue
+
+            scrubbed[key_text] = scrub_roboflow_debug(child, depth + 1)
+
+        return scrubbed
+
+    if isinstance(value, list):
+        return [scrub_roboflow_debug(item, depth + 1) for item in value[:3]]
+
+    if isinstance(value, str):
+        return value[:160]
+
+    return value
+
+
 def sampled_video_frames(video_path, max_frames):
     import cv2
     import numpy as np
@@ -630,6 +657,7 @@ def run_phone_detection(video_path):
     best_confidence = 0.0
     class_summary = {}
     response_shapes = []
+    debug_samples = []
 
     for frame_number, frame_width, frame_height, jpg_bytes in sampled_video_frames(video_path, PHONE_DETECTION_MAX_FRAMES):
         response = call_roboflow_phone_workflow(jpg_bytes)
@@ -637,6 +665,9 @@ def run_phone_detection(video_path):
 
         if len(response_shapes) < 3:
             response_shapes.append(response_shape(response))
+
+        if len(debug_samples) < 1:
+            debug_samples.append(scrub_roboflow_debug(response))
 
         for item in response_class_summary(response):
             current = class_summary.setdefault(item["class"], {
@@ -679,6 +710,7 @@ def run_phone_detection(video_path):
             )
         ][:12],
         "response_shapes": response_shapes,
+        "debug_samples": debug_samples,
         "frames": frame_results
     }
 

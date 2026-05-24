@@ -842,6 +842,9 @@ function renderPhoneDetectionResult(data) {
   const shapeText = !classesText && Array.isArray(data.response_shapes) && data.response_shapes.length
     ? `Response shape: ${JSON.stringify(data.response_shapes[0]).slice(0, 180)}`
     : "";
+  const debugText = !classesText && Array.isArray(data.debug_samples) && data.debug_samples.length
+    ? `Debug sample: ${JSON.stringify(data.debug_samples[0]).slice(0, 420)}`
+    : "";
 
   highlightPhoneSeats(seatLabels);
 
@@ -870,6 +873,11 @@ function renderPhoneDetectionResult(data) {
     ${shapeText ? `
       <div style="margin-top: 0.25rem; font-size: 0.75rem;">
         ${escapeHtml(shapeText)}
+      </div>
+    ` : ""}
+    ${debugText ? `
+      <div style="margin-top: 0.25rem; font-size: 0.75rem;">
+        ${escapeHtml(debugText)}
       </div>
     ` : ""}
   `;
