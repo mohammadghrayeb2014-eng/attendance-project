@@ -29,6 +29,10 @@ function sameId(a, b) {
   return String(a) === String(b);
 }
 
+function normalizePersonKey(value) {
+  return normalize(value).replace(/[^a-z0-9]/g, "");
+}
+
 async function readResponse(res) {
   const text = await res.text();
 
@@ -469,6 +473,9 @@ function applyAiAttendanceResults(aiResults) {
   }
 
   const rows = statusBody.querySelectorAll("tr");
+  const returnedNames = aiResults
+    .map(r => String(r.name || r.username || "").trim())
+    .filter(Boolean);
 
   let totalConfidence = 0;
   let matchedStudents = 0;
@@ -491,11 +498,18 @@ function applyAiAttendanceResults(aiResults) {
 
     reviewStudents++;
 
+    const studentKey = normalizePersonKey(cells[1].textContent);
+    const usernameKey = normalizePersonKey(cells[1].dataset.username);
+
     const aiRecord = aiResults.find(r =>
       normalize(r.name) === studentName ||
       normalize(r.name) === studentUsername ||
       normalize(r.username) === studentUsername ||
-      normalize(r.username) === studentName
+      normalize(r.username) === studentName ||
+      normalizePersonKey(r.name) === studentKey ||
+      normalizePersonKey(r.name) === usernameKey ||
+      normalizePersonKey(r.username) === usernameKey ||
+      normalizePersonKey(r.username) === studentKey
     );
 
     const isPresent = aiRecord && (
@@ -562,9 +576,16 @@ function applyAiAttendanceResults(aiResults) {
       </div>
     `;
   } else {
+    const returnedText = returnedNames.length
+      ? `AI returned: ${returnedNames.slice(0, 6).join(", ")}${returnedNames.length > 6 ? "..." : ""}`
+      : "AI returned no student rows";
+
     accBox.innerHTML = `
       <div class="tag tag-absent">
         0/${reviewStudents} seated students matched by AI
+      </div>
+      <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.35rem;">
+        ${escapeHtml(returnedText)}
       </div>
     `;
   }

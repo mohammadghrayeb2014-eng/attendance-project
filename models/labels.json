@@ -7,10 +7,6 @@
       "samples": 96
     },
     {
-      "name": "abbass1",
-      "samples": 100
-    },
-    {
       "name": "ali",
       "samples": 100
     },
@@ -19,12 +15,16 @@
       "samples": 56
     },
     {
+      "name": "hussien",
+      "samples": 100
+    },
+    {
       "name": "karim",
       "samples": 64
     },
     {
       "name": "mohammad1",
-      "samples": 72
+      "samples": 164
     },
     {
       "name": "reda",
@@ -35,5 +35,5 @@
       "samples": 40
     }
   ],
-  "total_embeddings": 604
+  "total_embeddings": 696
 }

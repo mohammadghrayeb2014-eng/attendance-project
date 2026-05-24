@@ -25,6 +25,7 @@ VIDEO_DIR = PROJECT_ROOT / "data/classroom_videos"
 PKL_PATH = PROJECT_ROOT / "models/arcface_embeddings.pkl"
 YUNET_PATH = PROJECT_ROOT / "models/face_yunet.onnx"
 OUT_CSV = PROJECT_ROOT / "output/attendance/attendance.csv"
+DEBUG_CSV = PROJECT_ROOT / "output/attendance/match_debug.csv"
 DEBUG_DIR = PROJECT_ROOT / "output/debug_frames"
 
 # ===== DEEPFACE HOME =====
@@ -48,12 +49,12 @@ DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
 # ===== CONFIG =====
 MODEL_NAME = "ArcFace"
-THRESHOLD = float(os.getenv("AI_MATCH_THRESHOLD", "0.62"))
-PARTIAL_FACE_THRESHOLD = float(os.getenv("AI_PARTIAL_FACE_THRESHOLD", "0.68"))
-MIN_MATCH_MARGIN = float(os.getenv("AI_MIN_MATCH_MARGIN", "0.015"))
+THRESHOLD = float(os.getenv("AI_MATCH_THRESHOLD", "0.45"))
+PARTIAL_FACE_THRESHOLD = float(os.getenv("AI_PARTIAL_FACE_THRESHOLD", "0.45"))
+MIN_MATCH_MARGIN = float(os.getenv("AI_MIN_MATCH_MARGIN", "0.02"))
 MATCH_TOP_K = int(os.getenv("AI_MATCH_TOP_K", "3"))
 PROCESS_EVERY_N_FRAMES = int(os.getenv("AI_PROCESS_EVERY_N_FRAMES", "6"))
-MIN_HITS = int(os.getenv("AI_MIN_HITS", "1"))
+MIN_HITS = int(os.getenv("AI_MIN_HITS", "2"))
 MAX_FRAME_WIDTH = int(os.getenv("AI_MAX_FRAME_WIDTH", "1280"))
 MIN_FACE_SCORE = float(os.getenv("AI_MIN_FACE_SCORE", "0.25"))
 MAX_FRAMES = int(os.getenv("AI_MAX_FRAMES", "0"))
@@ -70,6 +71,7 @@ FACE_CROP_TARGET_SIZE = int(os.getenv("AI_FACE_CROP_TARGET_SIZE", "224"))
 RUNNER_TIME_BUDGET_SECONDS = int(os.getenv("AI_RUNNER_TIME_BUDGET_SECONDS", "600"))
 IGNORE_REGIONS_RAW = os.getenv("AI_IGNORE_REGIONS", "")
 EXPECTED_NAMES_RAW = os.getenv("AI_EXPECTED_NAMES", "")
+ALLOW_PARTIAL_MATCHES = os.getenv("AI_ALLOW_PARTIAL_MATCHES", "0") == "1"
 
 CANONICAL = np.array([
     [38.2946, 51.6963],
@@ -101,6 +103,7 @@ print(
     f"face_crop_padding={FACE_CROP_PADDING}",
     f"face_crop_target_size={FACE_CROP_TARGET_SIZE}",
     f"time_budget={RUNNER_TIME_BUDGET_SECONDS or 'unlimited'}",
+    f"allow_partial_matches={ALLOW_PARTIAL_MATCHES}",
     f"ignore_regions={IGNORE_REGIONS_RAW or 'none'}"
 )
 
@@ -346,7 +349,7 @@ def match_face(frame, face):
 
     padded_crop = crop_face(frame, face)
 
-    if padded_crop is not None:
+    if ALLOW_PARTIAL_MATCHES and padded_crop is not None:
         variants.append(("partial", padded_crop, PARTIAL_FACE_THRESHOLD))
 
         enhanced_crop = enhance_face_image(padded_crop)
@@ -358,7 +361,9 @@ def match_face(frame, face):
         "dist": 1.0,
         "variant": "none",
         "accepted": False,
-        "margin": 0.0
+        "margin": 0.0,
+        "candidate_name": "Unknown",
+        "candidate_dist": 1.0
     }
 
     for variant_name, img, threshold in variants:
@@ -378,10 +383,14 @@ def match_face(frame, face):
                 "dist": dist,
                 "variant": variant_name,
                 "accepted": accepted,
-                "margin": nearest["margin"]
+                "margin": nearest["margin"],
+                "candidate_name": name,
+                "candidate_dist": dist
             }
 
     if not best["accepted"]:
+        best["candidate_name"] = best["name"]
+        best["candidate_dist"] = best["dist"]
         best["name"] = "Unknown"
 
     return best
@@ -524,6 +533,15 @@ def run():
 
     hits = {item["name"]: 0 for item in match_data}
     confidences = {item["name"]: [] for item in match_data}
+    candidate_stats = {
+        item["name"]: {
+            "candidate_frames": 0,
+            "best_distance": 1.0,
+            "best_margin": 0.0,
+            "best_variant": "none"
+        }
+        for item in match_data
+    }
 
     frame_idx = 0
     processed_frames = 0
@@ -599,8 +617,21 @@ def run():
                     "dist": dist,
                     "acc": acc,
                     "face": face,
-                    "variant": match["variant"]
+                    "variant": match["variant"],
+                    "candidate_name": match["candidate_name"],
+                    "candidate_dist": match["candidate_dist"],
+                    "margin": match["margin"]
                 })
+
+                candidate_name = match["candidate_name"]
+                if candidate_name in candidate_stats:
+                    stats = candidate_stats[candidate_name]
+                    stats["candidate_frames"] += 1
+
+                    if match["candidate_dist"] < stats["best_distance"]:
+                        stats["best_distance"] = match["candidate_dist"]
+                        stats["best_margin"] = match["margin"]
+                        stats["best_variant"] = match["variant"]
 
             frame_best = {}
 
@@ -672,7 +703,21 @@ def run():
     OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
     df = pd.DataFrame(rows)
     df.to_csv(OUT_CSV, index=False)
+
+    debug_rows = []
+    for name, stats in candidate_stats.items():
+        debug_rows.append({
+            "name": name,
+            "hits": hits[name],
+            "candidate_frames": stats["candidate_frames"],
+            "best_distance": f"{stats['best_distance']:.4f}" if stats["best_distance"] < 1 else "N/A",
+            "best_margin": f"{stats['best_margin']:.4f}",
+            "best_variant": stats["best_variant"]
+        })
+
+    pd.DataFrame(debug_rows).to_csv(DEBUG_CSV, index=False)
     print(f"\nAttendance saved to {OUT_CSV}")
+    print(f"Match debug saved to {DEBUG_CSV}")
     print(f"Present: {sum(1 for r in rows if r['present'] == 'YES')}/{len(rows)}")
 
 
