@@ -51,6 +51,7 @@ ROBOFLOW_WORKFLOW_URL = os.getenv(
     "https://detect.roboflow.com/infer/workflows/smart-classroom/detect-and-classify"
 ).strip()
 ROBOFLOW_IMAGE_INPUT_NAME = os.getenv("ROBOFLOW_IMAGE_INPUT_NAME", "image").strip() or "image"
+ROBOFLOW_WORKFLOW_PAYLOAD = os.getenv("ROBOFLOW_WORKFLOW_PAYLOAD", "auto").strip().lower() or "auto"
 PHONE_DETECTION_MAX_FRAMES = int(os.getenv("PHONE_DETECTION_MAX_FRAMES", "16"))
 PHONE_DETECTION_CONFIDENCE = float(os.getenv("PHONE_DETECTION_CONFIDENCE", "0.35"))
 PHONE_DETECTION_CLASSES = {
@@ -345,8 +346,21 @@ def find_detection_items(value):
     items = []
 
     if isinstance(value, dict):
-        label = value.get("class") or value.get("class_name") or value.get("label") or value.get("name")
+        label = (
+            value.get("class")
+            or value.get("class_name")
+            or value.get("label")
+            or value.get("name")
+            or value.get("top")
+            or value.get("predicted_class")
+        )
         confidence = value.get("confidence", value.get("score", value.get("probability")))
+
+        if confidence is None and isinstance(value.get("predictions"), dict) and label:
+            confidence = value["predictions"].get(str(label))
+
+        if confidence is None and isinstance(value.get("confidence"), str):
+            confidence = value.get("confidence")
 
         if label is not None and confidence is not None:
             try:
@@ -373,29 +387,65 @@ def find_detection_items(value):
     return items
 
 
-def call_roboflow_phone_workflow(jpg_bytes):
-    encoded = base64.b64encode(jpg_bytes).decode("ascii")
-    payload = {
-        "api_key": ROBOFLOW_API_KEY,
-        "inputs": {
+def roboflow_payloads(encoded):
+    candidates = []
+
+    if ROBOFLOW_WORKFLOW_PAYLOAD in {"workflow", "auto"}:
+        candidates.append({
+            "api_key": ROBOFLOW_API_KEY,
+            "inputs": {
+                ROBOFLOW_IMAGE_INPUT_NAME: {
+                    "type": "base64",
+                    "value": encoded
+                }
+            }
+        })
+
+    if ROBOFLOW_WORKFLOW_PAYLOAD in {"simple", "auto"}:
+        candidates.append({
+            "api_key": ROBOFLOW_API_KEY,
             ROBOFLOW_IMAGE_INPUT_NAME: {
                 "type": "base64",
                 "value": encoded
             }
-        }
-    }
+        })
 
-    req = urllib.request.Request(
-        roboflow_workflow_url(),
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST"
-    )
+    if ROBOFLOW_WORKFLOW_PAYLOAD in {"image", "auto"}:
+        candidates.append({
+            "api_key": ROBOFLOW_API_KEY,
+            ROBOFLOW_IMAGE_INPUT_NAME: encoded
+        })
 
-    with urllib.request.urlopen(req, timeout=45) as res:
-        text = res.read().decode("utf-8", errors="replace")
+    return candidates
 
-    return json.loads(text) if text else {}
+
+def call_roboflow_phone_workflow(jpg_bytes):
+    encoded = base64.b64encode(jpg_bytes).decode("ascii")
+    last_error = None
+
+    for payload in roboflow_payloads(encoded):
+        req = urllib.request.Request(
+            roboflow_workflow_url(),
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=45) as res:
+                text = res.read().decode("utf-8", errors="replace")
+
+            return json.loads(text) if text else {}
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            last_error = f"Roboflow HTTP {e.code}: {body[:500]}"
+        except Exception as e:
+            last_error = str(e)
+
+        if ROBOFLOW_WORKFLOW_PAYLOAD != "auto":
+            break
+
+    raise RuntimeError(last_error or "Roboflow request failed.")
 
 
 def is_phone_label(label):

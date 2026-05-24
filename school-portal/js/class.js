@@ -836,6 +836,9 @@ function renderPhoneDetectionResult(data) {
   const classesText = classesSeen
     .map(item => `${item.class} ${(Number(item.best_confidence || 0) * 100).toFixed(0)}%`)
     .join(", ");
+  const noLabelsText = !classesText && !data.phone_detected
+    ? "Roboflow returned no usable labels"
+    : "";
 
   highlightPhoneSeats(seatLabels);
 
@@ -854,6 +857,11 @@ function renderPhoneDetectionResult(data) {
     ${classesText ? `
       <div style="margin-top: 0.25rem;">
         Roboflow saw: ${escapeHtml(classesText)}
+      </div>
+    ` : ""}
+    ${noLabelsText ? `
+      <div style="margin-top: 0.25rem;">
+        ${escapeHtml(noLabelsText)}
       </div>
     ` : ""}
   `;
