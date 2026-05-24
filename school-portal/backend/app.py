@@ -373,6 +373,36 @@ def find_detection_items(value):
                     "height": None
                 })
 
+        looks_like_nested_probability_map = (
+            value
+            and not (set(value.keys()) & detection_keys)
+            and all(isinstance(item, dict) for item in value.values())
+        )
+
+        if looks_like_nested_probability_map:
+            for label, prediction in value.items():
+                confidence = prediction.get(
+                    "confidence",
+                    prediction.get("score", prediction.get("probability"))
+                )
+
+                if confidence is None:
+                    continue
+
+                try:
+                    confidence = float(confidence)
+                except Exception:
+                    continue
+
+                items.append({
+                    "class": str(label),
+                    "confidence": confidence,
+                    "x": prediction.get("x"),
+                    "y": prediction.get("y"),
+                    "width": prediction.get("width", prediction.get("w")),
+                    "height": prediction.get("height", prediction.get("h"))
+                })
+
         label = (
             value.get("class")
             or value.get("class_name")
