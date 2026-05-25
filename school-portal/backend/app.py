@@ -5,7 +5,6 @@ from pathlib import Path
 from datetime import datetime
 from uuid import uuid4
 from types import SimpleNamespace
-import base64
 import os
 import csv
 import json
@@ -16,7 +15,6 @@ import subprocess
 import sys
 import threading
 import time
-import urllib.parse
 import urllib.request
 import bcrypt
 import secrets
@@ -45,18 +43,12 @@ ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(30 * 1024 * 1024)))
 GCS_VIDEO_BUCKET = os.getenv("GCS_VIDEO_BUCKET", "").strip()
 METADATA_HEADERS = {"Metadata-Flavor": "Google"}
-ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY", "").strip()
-ROBOFLOW_INFERENCE_URL = os.getenv(
-    "ROBOFLOW_INFERENCE_URL",
-    "https://serverless.roboflow.com/phone-detection-1gdp9/1"
-).strip()
-ROBOFLOW_ENDPOINT_MODE = os.getenv("ROBOFLOW_ENDPOINT_MODE", "").strip().lower()
-ROBOFLOW_IMAGE_INPUT_NAME = os.getenv("ROBOFLOW_IMAGE_INPUT_NAME", "image").strip() or "image"
-ROBOFLOW_WORKFLOW_PAYLOAD = os.getenv("ROBOFLOW_WORKFLOW_PAYLOAD", "workflow").strip().lower() or "workflow"
+PHONE_DETECTION_MODEL = os.getenv("PHONE_DETECTION_MODEL", "").strip()
+PHONE_DETECTION_DEVICE = os.getenv("PHONE_DETECTION_DEVICE", "").strip()
 PHONE_DETECTION_MAX_FRAMES = int(os.getenv("PHONE_DETECTION_MAX_FRAMES", "40"))
 PHONE_DETECTION_USE_TILES = os.getenv("PHONE_DETECTION_USE_TILES", "1") != "0"
 PHONE_DETECTION_TILE_GRID = os.getenv("PHONE_DETECTION_TILE_GRID", "2x2").strip().lower()
-PHONE_DETECTION_CONFIDENCE = float(os.getenv("PHONE_DETECTION_CONFIDENCE", "0.35"))
+PHONE_DETECTION_CONFIDENCE = float(os.getenv("PHONE_DETECTION_CONFIDENCE", "0.25"))
 PHONE_DETECTION_CLASSES = {
     item.strip().lower()
     for item in os.getenv(
@@ -65,14 +57,8 @@ PHONE_DETECTION_CLASSES = {
     ).split(",")
     if item.strip()
 }
-PHONE_DETECTION_NEGATIVE_CLASSES = {
-    item.strip().lower()
-    for item in os.getenv(
-        "PHONE_DETECTION_NEGATIVE_CLASSES",
-        "no phone,no_phone,no-phone,not phone,without phone"
-    ).split(",")
-    if item.strip()
-}
+PHONE_YOLO_MODEL = None
+PHONE_YOLO_MODEL_PATH = None
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
@@ -329,385 +315,145 @@ def ai_failure_details(result):
     return detail[-1200:]
 
 
-def roboflow_endpoint_mode():
-    if ROBOFLOW_ENDPOINT_MODE in {"workflow", "model"}:
-        return ROBOFLOW_ENDPOINT_MODE
-
-    parsed = urllib.parse.urlparse(ROBOFLOW_INFERENCE_URL)
-
-    if "/infer/workflows/" in parsed.path:
-        return "workflow"
-
-    return "model"
-
-
-def roboflow_inference_url():
-    if not ROBOFLOW_API_KEY:
-        raise ValueError("ROBOFLOW_API_KEY is not configured.")
-
-    if not ROBOFLOW_INFERENCE_URL:
-        raise ValueError("ROBOFLOW_INFERENCE_URL is not configured.")
-
-    parsed = urllib.parse.urlparse(ROBOFLOW_INFERENCE_URL)
-    query = urllib.parse.parse_qs(parsed.query)
-
-    if "api_key" not in query:
-        query["api_key"] = [ROBOFLOW_API_KEY]
-
-    if roboflow_endpoint_mode() == "model" and "confidence" not in query:
-        query["confidence"] = [str(int(round(PHONE_DETECTION_CONFIDENCE * 100)))]
-
-    return urllib.parse.urlunparse(parsed._replace(query=urllib.parse.urlencode(query, doseq=True)))
-
-
-def find_detection_items(value):
-    items = []
-
-    if isinstance(value, dict):
-        detection_keys = {
-            "class", "class_name", "label", "name", "top", "predicted_class",
-            "confidence", "score", "probability", "x", "y", "width", "height", "w", "h"
-        }
-        looks_like_probability_map = (
-            value
-            and not (set(value.keys()) & detection_keys)
-            and any(isinstance(item, (int, float)) for item in value.values())
-            and all(isinstance(item, (int, float, str)) for item in value.values())
-        )
-
-        if looks_like_probability_map:
-            for label, confidence in value.items():
-                try:
-                    confidence = float(confidence)
-                except Exception:
-                    continue
-
-                items.append({
-                    "class": str(label),
-                    "confidence": confidence,
-                    "x": None,
-                    "y": None,
-                    "width": None,
-                    "height": None
-                })
-
-        looks_like_nested_probability_map = (
-            value
-            and not (set(value.keys()) & detection_keys)
-            and all(isinstance(item, dict) for item in value.values())
-        )
-
-        if looks_like_nested_probability_map:
-            for label, prediction in value.items():
-                confidence = prediction.get(
-                    "confidence",
-                    prediction.get("score", prediction.get("probability"))
-                )
-
-                if confidence is None:
-                    continue
-
-                try:
-                    confidence = float(confidence)
-                except Exception:
-                    continue
-
-                items.append({
-                    "class": str(label),
-                    "confidence": confidence,
-                    "x": prediction.get("x"),
-                    "y": prediction.get("y"),
-                    "width": prediction.get("width", prediction.get("w")),
-                    "height": prediction.get("height", prediction.get("h"))
-                })
-
-        label = (
-            value.get("class")
-            or value.get("class_name")
-            or value.get("label")
-            or value.get("name")
-            or value.get("top")
-            or value.get("predicted_class")
-        )
-        confidence = value.get("confidence", value.get("score", value.get("probability")))
-
-        if confidence is None and isinstance(value.get("predictions"), dict) and label:
-            confidence = value["predictions"].get(str(label))
-
-        if isinstance(value.get("predictions"), dict):
-            items.extend(find_detection_items(value["predictions"]))
-
-        if confidence is None and isinstance(value.get("confidence"), str):
-            confidence = value.get("confidence")
-
-        if label is not None and confidence is not None:
-            try:
-                confidence = float(confidence)
-            except Exception:
-                confidence = 0.0
-
-            items.append({
-                "class": str(label),
-                "confidence": confidence,
-                "x": value.get("x"),
-                "y": value.get("y"),
-                "width": value.get("width", value.get("w")),
-                "height": value.get("height", value.get("h"))
-            })
-
-        for child in value.values():
-            items.extend(find_detection_items(child))
-
-    elif isinstance(value, list):
-        for child in value:
-            items.extend(find_detection_items(child))
-
-    return items
-
-
-def roboflow_workflow_payloads(encoded):
-    workflow_payload = {
-        "api_key": ROBOFLOW_API_KEY,
-        "inputs": {
-            ROBOFLOW_IMAGE_INPUT_NAME: {
-                "type": "base64",
-                "value": encoded
-            }
-        }
-    }
-
-    if ROBOFLOW_WORKFLOW_PAYLOAD == "workflow":
-        return [workflow_payload]
-
-    if ROBOFLOW_WORKFLOW_PAYLOAD == "simple":
-        return [{
-            "api_key": ROBOFLOW_API_KEY,
-            ROBOFLOW_IMAGE_INPUT_NAME: {
-                "type": "base64",
-                "value": encoded
-            }
-        }]
-
-    if ROBOFLOW_WORKFLOW_PAYLOAD == "image":
-        return [{
-            "api_key": ROBOFLOW_API_KEY,
-            ROBOFLOW_IMAGE_INPUT_NAME: encoded
-        }]
-
-    return [workflow_payload]
-
-
-def roboflow_requests(encoded):
-    if roboflow_endpoint_mode() == "model":
-        return [{
-            "data": encoded.encode("ascii"),
-            "headers": {"Content-Type": "application/x-www-form-urlencoded"}
-        }]
-
-    return [
-        {
-            "data": json.dumps(payload).encode("utf-8"),
-            "headers": {"Content-Type": "application/json"}
-        }
-        for payload in roboflow_workflow_payloads(encoded)
-    ]
-
-
-def safe_roboflow_error(text):
-    clean = str(text or "")
-
-    if ROBOFLOW_API_KEY:
-        clean = clean.replace(ROBOFLOW_API_KEY, "<redacted>")
-
-    clean = re.sub(r'("api_key"\s*:\s*")[^"]+', r'\1<redacted>', clean)
-    clean = re.sub(r'("value"\s*:\s*")[^"]{80,}', r'\1<omitted>', clean)
-    clean = re.sub(r'("image"\s*:\s*")[^"]{80,}', r'\1<omitted>', clean)
-
-    return clean[:700]
-
-
-def call_roboflow_phone_workflow(jpg_bytes):
-    encoded = base64.b64encode(jpg_bytes).decode("ascii")
-    last_error = None
-    empty_response = None
-
-    for request_payload in roboflow_requests(encoded):
-        req = urllib.request.Request(
-            roboflow_inference_url(),
-            data=request_payload["data"],
-            headers=request_payload["headers"],
-            method="POST"
-        )
-
-        try:
-            with urllib.request.urlopen(req, timeout=45) as res:
-                text = res.read().decode("utf-8", errors="replace")
-
-            response = json.loads(text) if text else {}
-
-            if find_detection_items(response):
-                return response
-
-            if empty_response is None:
-                empty_response = response
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")
-            last_error = f"Roboflow HTTP {e.code}: {safe_roboflow_error(body)}"
-        except Exception as e:
-            last_error = safe_roboflow_error(str(e))
-
-        break
-
-    if empty_response is not None:
-        return empty_response
-
-    raise RuntimeError(last_error or "Roboflow request failed.")
-
-
 def is_phone_label(label):
     clean = str(label or "").strip().lower()
 
     if not clean:
         return False
 
-    if clean in PHONE_DETECTION_NEGATIVE_CLASSES:
-        return False
-
-    if any(negative in clean for negative in PHONE_DETECTION_NEGATIVE_CLASSES):
-        return False
-
     return clean in PHONE_DETECTION_CLASSES or any(item in clean for item in PHONE_DETECTION_CLASSES)
 
 
-def phone_detections_from_response(response):
+def active_phone_detection_model():
+    custom_model = ROOT / "models" / "phone_yolo11.pt"
+
+    if PHONE_DETECTION_MODEL:
+        configured = Path(PHONE_DETECTION_MODEL)
+
+        if configured.is_absolute():
+            return str(configured) if configured.exists() else "yolo11n.pt"
+
+        if "/" in PHONE_DETECTION_MODEL or "\\" in PHONE_DETECTION_MODEL:
+            configured = ROOT / configured
+            return str(configured) if configured.exists() else "yolo11n.pt"
+
+        return PHONE_DETECTION_MODEL
+
+    return str(custom_model) if custom_model.exists() else "yolo11n.pt"
+
+
+def phone_detection_model():
+    global PHONE_YOLO_MODEL, PHONE_YOLO_MODEL_PATH
+
+    model_path = active_phone_detection_model()
+
+    if PHONE_YOLO_MODEL is not None and PHONE_YOLO_MODEL_PATH == model_path:
+        return PHONE_YOLO_MODEL
+
+    try:
+        from ultralytics import YOLO
+    except ImportError as e:
+        raise RuntimeError(
+            "Local phone detector is not installed. Run `pip install -r requirements.txt` "
+            "so the ultralytics YOLO package is available."
+        ) from e
+
+    PHONE_YOLO_MODEL = YOLO(model_path)
+    PHONE_YOLO_MODEL_PATH = model_path
+    return PHONE_YOLO_MODEL
+
+
+def yolo_detection_kwargs():
+    kwargs = {
+        "conf": PHONE_DETECTION_CONFIDENCE,
+        "verbose": False
+    }
+
+    if PHONE_DETECTION_DEVICE:
+        kwargs["device"] = PHONE_DETECTION_DEVICE
+
+    return kwargs
+
+
+def update_class_summary(summary, label, confidence):
+    current = summary.setdefault(label, {
+        "count": 0,
+        "best_confidence": 0.0
+    })
+    current["count"] += 1
+    current["best_confidence"] = max(current["best_confidence"], confidence)
+
+
+def detect_phone_sample(sample, class_summary):
+    model = phone_detection_model()
+    result = model(sample["frame"], **yolo_detection_kwargs())[0]
+    names = getattr(model, "names", {}) or getattr(result, "names", {}) or {}
     detections = []
 
-    for item in find_detection_items(response):
-        label = item["class"].strip().lower()
+    boxes = getattr(result, "boxes", None)
+
+    if boxes is None:
+        return detections
+
+    for box in boxes:
+        cls = int(box.cls[0])
+        label = str(names.get(cls, cls)).strip().lower()
+        confidence = float(box.conf[0])
+        update_class_summary(class_summary, label, confidence)
 
         if not is_phone_label(label):
             continue
 
-        if item["confidence"] < PHONE_DETECTION_CONFIDENCE:
-            continue
+        x1, y1, x2, y2 = [float(value) for value in box.xyxy[0]]
+        width = max(0.0, x2 - x1)
+        height = max(0.0, y2 - y1)
 
-        detections.append(item)
+        detections.append({
+            "class": label,
+            "confidence": confidence,
+            "x": sample["offset_x"] + x1 + (width / 2),
+            "y": sample["offset_y"] + y1 + (height / 2),
+            "width": width,
+            "height": height,
+            "region": sample["region"]
+        })
 
     detections.sort(key=lambda item: item["confidence"], reverse=True)
     return detections
 
 
-def response_class_summary(response):
-    summary = {}
+def detection_iou(a, b):
+    ax1 = float(a["x"]) - (float(a.get("width") or 0) / 2)
+    ay1 = float(a["y"]) - (float(a.get("height") or 0) / 2)
+    ax2 = float(a["x"]) + (float(a.get("width") or 0) / 2)
+    ay2 = float(a["y"]) + (float(a.get("height") or 0) / 2)
+    bx1 = float(b["x"]) - (float(b.get("width") or 0) / 2)
+    by1 = float(b["y"]) - (float(b.get("height") or 0) / 2)
+    bx2 = float(b["x"]) + (float(b.get("width") or 0) / 2)
+    by2 = float(b["y"]) + (float(b.get("height") or 0) / 2)
 
-    for item in find_detection_items(response):
-        label = item["class"].strip().lower()
+    overlap_x1 = max(ax1, bx1)
+    overlap_y1 = max(ay1, by1)
+    overlap_x2 = min(ax2, bx2)
+    overlap_y2 = min(ay2, by2)
+    overlap = max(0.0, overlap_x2 - overlap_x1) * max(0.0, overlap_y2 - overlap_y1)
+    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
+    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
+    union = area_a + area_b - overlap
 
-        if not label:
+    return overlap / union if union > 0 else 0.0
+
+
+def dedupe_detections(detections, iou_threshold=0.45):
+    kept = []
+
+    for detection in sorted(detections, key=lambda item: item["confidence"], reverse=True):
+        if any(detection_iou(detection, existing) >= iou_threshold for existing in kept):
             continue
 
-        current = summary.setdefault(label, {
-            "count": 0,
-            "best_confidence": 0.0
-        })
-        current["count"] += 1
-        current["best_confidence"] = max(current["best_confidence"], item["confidence"])
+        kept.append(detection)
 
-    return [
-        {
-            "class": label,
-            "count": values["count"],
-            "best_confidence": round(values["best_confidence"], 4)
-        }
-        for label, values in sorted(
-            summary.items(),
-            key=lambda pair: pair[1]["best_confidence"],
-            reverse=True
-        )
-    ]
-
-
-def response_shape(value, depth=0):
-    if depth > 2:
-        return type(value).__name__
-
-    if isinstance(value, dict):
-        return {
-            key: response_shape(child, depth + 1)
-            for key, child in list(value.items())[:12]
-        }
-
-    if isinstance(value, list):
-        return [response_shape(value[0], depth + 1)] if value else []
-
-    return type(value).__name__
-
-
-def normalize_detection_coordinates(detections, sample):
-    normalized = []
-
-    for detection in detections:
-        item = dict(detection)
-        x = item.get("x")
-        y = item.get("y")
-
-        try:
-            if x is not None:
-                x = float(x)
-
-                if x <= 1:
-                    x = x * sample["region_width"]
-
-                item["x"] = sample["offset_x"] + x
-
-            if y is not None:
-                y = float(y)
-
-                if y <= 1:
-                    y = y * sample["region_height"]
-
-                item["y"] = sample["offset_y"] + y
-        except Exception:
-            pass
-
-        normalized.append(item)
-
-    return normalized
-
-
-def scrub_roboflow_debug(value, depth=0):
-    if depth > 5:
-        return type(value).__name__
-
-    if isinstance(value, dict):
-        scrubbed = {}
-
-        for key, child in list(value.items())[:20]:
-            key_text = str(key)
-
-            if key_text.lower() in {"image", "output_image", "value", "base64"}:
-                scrubbed[key_text] = "<omitted>"
-                continue
-
-            scrubbed[key_text] = scrub_roboflow_debug(child, depth + 1)
-
-        return scrubbed
-
-    if isinstance(value, list):
-        return [scrub_roboflow_debug(item, depth + 1) for item in value[:3]]
-
-    if isinstance(value, str):
-        return value[:160]
-
-    return value
-
-
-def encode_frame_jpg(frame):
-    import cv2
-
-    ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
-
-    return encoded.tobytes() if ok else None
+    return kept
 
 
 def parse_tile_grid(raw):
@@ -723,19 +469,16 @@ def parse_tile_grid(raw):
 
 def frame_image_samples(frame):
     height, width = frame.shape[:2]
-    full_jpg = encode_frame_jpg(frame)
-
-    if full_jpg:
-        yield {
-            "region": "full",
-            "frame_width": width,
-            "frame_height": height,
-            "offset_x": 0,
-            "offset_y": 0,
-            "region_width": width,
-            "region_height": height,
-            "jpg": full_jpg
-        }
+    yield {
+        "region": "full",
+        "frame_width": width,
+        "frame_height": height,
+        "offset_x": 0,
+        "offset_y": 0,
+        "region_width": width,
+        "region_height": height,
+        "frame": frame
+    }
 
     if not PHONE_DETECTION_USE_TILES:
         return
@@ -754,19 +497,16 @@ def frame_image_samples(frame):
             if crop.size == 0:
                 continue
 
-            jpg = encode_frame_jpg(crop)
-
-            if jpg:
-                yield {
-                    "region": f"tile_{row + 1}_{col + 1}",
-                    "frame_width": width,
-                    "frame_height": height,
-                    "offset_x": left,
-                    "offset_y": top,
-                    "region_width": right - left,
-                    "region_height": bottom - top,
-                    "jpg": jpg
-                }
+            yield {
+                "region": f"tile_{row + 1}_{col + 1}",
+                "frame_width": width,
+                "frame_height": height,
+                "offset_x": left,
+                "offset_y": top,
+                "region_width": right - left,
+                "region_height": bottom - top,
+                "frame": crop
+            }
 
 
 def sampled_video_frames(video_path, max_frames):
@@ -808,35 +548,11 @@ def run_phone_detection(video_path):
     total_phones = 0
     best_confidence = 0.0
     class_summary = {}
-    response_shapes = []
-    debug_samples = []
 
     frame_map = {}
 
     for frame_number, sample in sampled_video_frames(video_path, PHONE_DETECTION_MAX_FRAMES):
-        response = call_roboflow_phone_workflow(sample["jpg"])
-        detections = normalize_detection_coordinates(
-            phone_detections_from_response(response),
-            sample
-        )
-
-        if len(response_shapes) < 3:
-            response_shapes.append(response_shape(response))
-
-        if len(debug_samples) < 1:
-            debug_samples.append(scrub_roboflow_debug(response))
-
-        for item in response_class_summary(response):
-            current = class_summary.setdefault(item["class"], {
-                "count": 0,
-                "best_confidence": 0.0
-            })
-            current["count"] += item["count"]
-            current["best_confidence"] = max(current["best_confidence"], item["best_confidence"])
-
-        if detections:
-            total_phones += len(detections)
-            best_confidence = max(best_confidence, detections[0]["confidence"])
+        detections = detect_phone_sample(sample, class_summary)
 
         frame_item = frame_map.setdefault(frame_number, {
             "frame": frame_number,
@@ -848,15 +564,26 @@ def run_phone_detection(video_path):
         })
         frame_item["regions_checked"].append(sample["region"])
         frame_item["detections"].extend(detections)
-        frame_item["detections"].sort(key=lambda item: item["confidence"], reverse=True)
+        frame_item["detections"] = dedupe_detections(frame_item["detections"])
         frame_item["detections"] = frame_item["detections"][:8]
         frame_item["phone_count"] = len(frame_item["detections"])
 
     frame_results = list(frame_map.values())
     phone_frames = sum(1 for item in frame_results if item["phone_count"] > 0)
+    total_phones = sum(item["phone_count"] for item in frame_results)
+    best_confidence = max(
+        (
+            detection["confidence"]
+            for item in frame_results
+            for detection in item["detections"]
+        ),
+        default=0.0
+    )
 
     result = {
         "success": True,
+        "detector": "local_yolo",
+        "model": active_phone_detection_model(),
         "phone_detected": phone_frames > 0,
         "frames_checked": len(frame_results),
         "phone_frames": phone_frames,
@@ -876,8 +603,6 @@ def run_phone_detection(video_path):
                 reverse=True
             )
         ][:12],
-        "response_shapes": response_shapes,
-        "debug_samples": debug_samples,
         "frames": frame_results
     }
 

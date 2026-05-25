@@ -837,7 +837,7 @@ function renderPhoneDetectionResult(data) {
     .map(item => `${item.class} ${(Number(item.best_confidence || 0) * 100).toFixed(0)}%`)
     .join(", ");
   const noLabelsText = !classesText && !data.phone_detected
-    ? "Roboflow returned no usable labels"
+    ? "Local model returned no phone labels"
     : "";
   const shapeText = !classesText && Array.isArray(data.response_shapes) && data.response_shapes.length
     ? `Response shape: ${JSON.stringify(data.response_shapes[0]).slice(0, 180)}`
@@ -862,7 +862,7 @@ function renderPhoneDetectionResult(data) {
     ` : ""}
     ${classesText ? `
       <div style="margin-top: 0.25rem;">
-        Roboflow saw: ${escapeHtml(classesText)}
+        Model saw: ${escapeHtml(classesText)}
       </div>
     ` : ""}
     ${noLabelsText ? `
@@ -976,8 +976,8 @@ async function uploadPhoneDetectionVideo(file) {
 function formatPhoneDetectionErrorMessage(message) {
   const normalized = String(message || "Phone detection failed.");
 
-  if (/Roboflow HTTP 502|HTTP 502|502/.test(normalized)) {
-    return "Roboflow is temporarily unavailable. Please wait a few minutes and try again.";
+  if (/HTTP 502|502/.test(normalized)) {
+    return "Phone detection is temporarily unavailable. Please wait a few minutes and try again.";
   }
 
   if (/timed out|network|fetch|Failed to fetch|gateway|service unavailable|503/i.test(normalized)) {

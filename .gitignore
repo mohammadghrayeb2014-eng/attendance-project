@@ -15,8 +15,14 @@ models/*
 !models/arcface_embeddings.pkl
 !models/face_yunet.onnx
 !models/labels.json
+!models/phone_yolo11.pt
 classroom_videos/
 yolov8n.pt
+yolo11n.pt
+runs/
+phone_yolo/images/
+phone_yolo/labels/**/*.txt
+phone_yolo/**/*.cache
 *.zip
 *.HEIC
 *.jpg
