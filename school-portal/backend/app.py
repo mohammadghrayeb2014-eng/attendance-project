@@ -48,10 +48,7 @@ METADATA_HEADERS = {"Metadata-Flavor": "Google"}
 ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY", "").strip()
 ROBOFLOW_INFERENCE_URL = os.getenv(
     "ROBOFLOW_INFERENCE_URL",
-    os.getenv(
-        "ROBOFLOW_WORKFLOW_URL",
-        "https://serverless.roboflow.com/phone-detection-1gdp9/1"
-    )
+    "https://serverless.roboflow.com/phone-detection-1gdp9/1"
 ).strip()
 ROBOFLOW_ENDPOINT_MODE = os.getenv("ROBOFLOW_ENDPOINT_MODE", "").strip().lower()
 ROBOFLOW_IMAGE_INPUT_NAME = os.getenv("ROBOFLOW_IMAGE_INPUT_NAME", "image").strip() or "image"
