@@ -1027,7 +1027,7 @@ function formatPhoneDetectionErrorMessage(message) {
 }
 
 function renderSleepDetectionResult(data) {
-  const target = $("sleepDetectionResult");
+  const target = $("sleepDetectionResult") || $("phoneDetectionResult");
 
   if (!target) return;
 
@@ -1599,7 +1599,6 @@ function wireCameraUI() {
   $("runAiBtn").addEventListener("click", () => $("videoUpload").click());
   $("uploadTriggerBtn").addEventListener("click", () => $("videoUpload").click());
   $("phoneDetectBtn").addEventListener("click", () => $("phoneVideoUpload").click());
-  $("sleepDetectBtn").addEventListener("click", () => $("sleepVideoUpload").click());
 
   $("videoUpload").addEventListener("change", async (e) => {
     const file = e.target.files[0];
@@ -1644,42 +1643,6 @@ function wireCameraUI() {
 
     const btn = $("phoneDetectBtn");
     const resultEl = $("phoneDetectionResult");
-    const originalHtml = btn.innerHTML;
-
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Detecting Phones...';
-
-    if (resultEl) {
-      resultEl.textContent = "Detecting phones...";
-    }
-
-    try {
-      const data = await uploadPhoneDetectionVideo(file);
-      renderPhoneDetectionResult(data);
-    } catch (err) {
-      console.error("Phone detection error:", err);
-
-      if (resultEl) {
-        const message = formatPhoneDetectionErrorMessage(err.message || "Phone detection failed.");
-        resultEl.innerHTML = `
-          <span class="tag tag-absent">Phone detection failed</span>
-          <span style="margin-left: 0.5rem;">${escapeHtml(message.slice(0, 260))}</span>
-        `;
-      }
-    } finally {
-      btn.disabled = false;
-      btn.innerHTML = originalHtml;
-      e.target.value = "";
-    }
-  });
-
-  $("sleepVideoUpload").addEventListener("change", async (e) => {
-    const file = e.target.files[0];
-
-    if (!file) return;
-
-    const btn = $("sleepDetectBtn");
-    const resultEl = $("sleepDetectionResult");
     const originalHtml = btn.innerHTML;
 
     btn.disabled = true;
