@@ -452,10 +452,11 @@ def detect_phone_sample(sample, model_candidate, class_summary, errors):
         cls = int(box.cls[0])
         label = str(names.get(cls, cls)).strip().lower()
         confidence = float(box.conf[0])
-        update_class_summary(class_summary, label, confidence)
 
         if not is_phone_label(label):
             continue
+
+        update_class_summary(class_summary, label, confidence)
 
         x1, y1, x2, y2 = [float(value) for value in box.xyxy[0]]
         width = max(0.0, x2 - x1)
