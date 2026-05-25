@@ -11,3 +11,9 @@ services:
         value: "False"
       - key: MONGO_URI
         sync: false
+      - key: ROBOFLOW_API_KEY
+        sync: false
+      - key: ROBOFLOW_INFERENCE_URL
+        value: https://serverless.roboflow.com/phone-detection-1gdp9/1
+      - key: ROBOFLOW_ENDPOINT_MODE
+        value: model

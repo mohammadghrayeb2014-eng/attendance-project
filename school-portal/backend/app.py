@@ -46,10 +46,14 @@ MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(30 * 1024 * 1024)))
 GCS_VIDEO_BUCKET = os.getenv("GCS_VIDEO_BUCKET", "").strip()
 METADATA_HEADERS = {"Metadata-Flavor": "Google"}
 ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY", "").strip()
-ROBOFLOW_WORKFLOW_URL = os.getenv(
-    "ROBOFLOW_WORKFLOW_URL",
-    "https://detect.roboflow.com/infer/workflows/smart-classroom/detect-and-classify"
+ROBOFLOW_INFERENCE_URL = os.getenv(
+    "ROBOFLOW_INFERENCE_URL",
+    os.getenv(
+        "ROBOFLOW_WORKFLOW_URL",
+        "https://serverless.roboflow.com/phone-detection-1gdp9/1"
+    )
 ).strip()
+ROBOFLOW_ENDPOINT_MODE = os.getenv("ROBOFLOW_ENDPOINT_MODE", "").strip().lower()
 ROBOFLOW_IMAGE_INPUT_NAME = os.getenv("ROBOFLOW_IMAGE_INPUT_NAME", "image").strip() or "image"
 ROBOFLOW_WORKFLOW_PAYLOAD = os.getenv("ROBOFLOW_WORKFLOW_PAYLOAD", "workflow").strip().lower() or "workflow"
 PHONE_DETECTION_MAX_FRAMES = int(os.getenv("PHONE_DETECTION_MAX_FRAMES", "40"))
@@ -328,18 +332,33 @@ def ai_failure_details(result):
     return detail[-1200:]
 
 
-def roboflow_workflow_url():
+def roboflow_endpoint_mode():
+    if ROBOFLOW_ENDPOINT_MODE in {"workflow", "model"}:
+        return ROBOFLOW_ENDPOINT_MODE
+
+    parsed = urllib.parse.urlparse(ROBOFLOW_INFERENCE_URL)
+
+    if "/infer/workflows/" in parsed.path:
+        return "workflow"
+
+    return "model"
+
+
+def roboflow_inference_url():
     if not ROBOFLOW_API_KEY:
         raise ValueError("ROBOFLOW_API_KEY is not configured.")
 
-    if not ROBOFLOW_WORKFLOW_URL:
-        raise ValueError("ROBOFLOW_WORKFLOW_URL is not configured.")
+    if not ROBOFLOW_INFERENCE_URL:
+        raise ValueError("ROBOFLOW_INFERENCE_URL is not configured.")
 
-    parsed = urllib.parse.urlparse(ROBOFLOW_WORKFLOW_URL)
+    parsed = urllib.parse.urlparse(ROBOFLOW_INFERENCE_URL)
     query = urllib.parse.parse_qs(parsed.query)
 
     if "api_key" not in query:
         query["api_key"] = [ROBOFLOW_API_KEY]
+
+    if roboflow_endpoint_mode() == "model" and "confidence" not in query:
+        query["confidence"] = [str(int(round(PHONE_DETECTION_CONFIDENCE * 100)))]
 
     return urllib.parse.urlunparse(parsed._replace(query=urllib.parse.urlencode(query, doseq=True)))
 
@@ -449,7 +468,7 @@ def find_detection_items(value):
     return items
 
 
-def roboflow_payloads(encoded):
+def roboflow_workflow_payloads(encoded):
     workflow_payload = {
         "api_key": ROBOFLOW_API_KEY,
         "inputs": {
@@ -481,6 +500,22 @@ def roboflow_payloads(encoded):
     return [workflow_payload]
 
 
+def roboflow_requests(encoded):
+    if roboflow_endpoint_mode() == "model":
+        return [{
+            "data": encoded.encode("ascii"),
+            "headers": {"Content-Type": "application/x-www-form-urlencoded"}
+        }]
+
+    return [
+        {
+            "data": json.dumps(payload).encode("utf-8"),
+            "headers": {"Content-Type": "application/json"}
+        }
+        for payload in roboflow_workflow_payloads(encoded)
+    ]
+
+
 def safe_roboflow_error(text):
     clean = str(text or "")
 
@@ -499,11 +534,11 @@ def call_roboflow_phone_workflow(jpg_bytes):
     last_error = None
     empty_response = None
 
-    for payload in roboflow_payloads(encoded):
+    for request_payload in roboflow_requests(encoded):
         req = urllib.request.Request(
-            roboflow_workflow_url(),
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            roboflow_inference_url(),
+            data=request_payload["data"],
+            headers=request_payload["headers"],
             method="POST"
         )
 
