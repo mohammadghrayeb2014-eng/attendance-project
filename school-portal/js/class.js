@@ -832,6 +832,9 @@ function renderPhoneDetectionResult(data) {
   const statusClass = data.phone_detected ? "tag tag-absent" : "tag tag-present";
   const statusText = data.phone_detected ? "Phone detected" : "No phone detected";
   const seatLabels = phoneDetectionSeatLabels(data);
+  const detectionText = data.raw_total_phones && data.raw_total_phones !== data.total_phones
+    ? `${data.total_phones || 0}/${data.raw_total_phones} stable`
+    : `${data.total_phones || 0}`;
   const classesSeen = Array.isArray(data.classes_seen) ? data.classes_seen.slice(0, 4) : [];
   const classesText = classesSeen
     .map(item => `${item.class} ${(Number(item.best_confidence || 0) * 100).toFixed(0)}%`)
@@ -851,7 +854,8 @@ function renderPhoneDetectionResult(data) {
   target.innerHTML = `
     <span class="${statusClass}">${statusText}</span>
     <span style="margin-left: 0.5rem;">
-      phones: ${data.total_phones || 0},
+      seats: ${seatLabels.length},
+      detections: ${detectionText},
       frames: ${data.phone_frames || 0}/${data.frames_checked || 0},
       best ${confidenceText}${data.tiles_enabled ? `, tiles ${escapeHtml(data.tile_grid || "on")}` : ""}
     </span>
@@ -896,11 +900,12 @@ function phoneDetectionSeatLabels(data) {
     return [];
   }
 
-  const labels = new Set();
+  const seats = new Map();
 
   data.frames.forEach(frame => {
     const frameWidth = Number(frame.frame_width || 0);
     const frameHeight = Number(frame.frame_height || 0);
+    const frameNumber = Number(frame.frame || 0);
 
     (frame.detections || []).forEach(detection => {
       const centerX = detectionCenter(detection.x, frameWidth);
@@ -913,12 +918,24 @@ function phoneDetectionSeatLabels(data) {
       const seatLabel = `${String.fromCharCode(65 + row)}${col + 1}`;
       const seatKey = `${row}_${col}`;
       const seatValue = currentSeating[seatKey];
+      const item = seats.get(seatLabel) || {
+        label: seatLabel,
+        display: `${seatLabel}${seatDisplayName(seatValue) !== "Empty" ? ` ${seatDisplayName(seatValue)}` : ""}`,
+        frames: new Set(),
+        best: 0
+      };
 
-      labels.add(`${seatLabel}${seatDisplayName(seatValue) !== "Empty" ? ` ${seatDisplayName(seatValue)}` : ""}`);
+      item.frames.add(frameNumber);
+      item.best = Math.max(item.best, Number(detection.confidence || 0));
+      seats.set(seatLabel, item);
     });
   });
 
-  return Array.from(labels).slice(0, 8);
+  return Array.from(seats.values())
+    .filter(item => item.frames.size >= 2 || item.best >= 0.85)
+    .sort((a, b) => b.frames.size - a.frames.size || b.best - a.best)
+    .slice(0, 4)
+    .map(item => item.display);
 }
 
 function clearPhoneSeatHighlights() {

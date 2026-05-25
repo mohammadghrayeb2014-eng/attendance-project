@@ -19,6 +19,14 @@ services:
         value: "60"
       - key: PHONE_DETECTION_CONFIDENCE
         value: "0.10"
+      - key: PHONE_DETECTION_FALLBACK_CONFIDENCE
+        value: "0.35"
+      - key: PHONE_DETECTION_STRONG_CONFIDENCE
+        value: "0.75"
+      - key: PHONE_DETECTION_MIN_SUPPORT_FRAMES
+        value: "2"
+      - key: PHONE_DETECTION_FALLBACK_USE_TILES
+        value: "0"
       - key: PHONE_DETECTION_IMGSZ
         value: "768"
       - key: PHONE_DETECTION_USE_TILES

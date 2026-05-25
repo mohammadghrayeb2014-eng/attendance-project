@@ -50,6 +50,10 @@ PHONE_DETECTION_MAX_FRAMES = int(os.getenv("PHONE_DETECTION_MAX_FRAMES", "60"))
 PHONE_DETECTION_USE_TILES = os.getenv("PHONE_DETECTION_USE_TILES", "1") != "0"
 PHONE_DETECTION_TILE_GRID = os.getenv("PHONE_DETECTION_TILE_GRID", "3x3").strip().lower()
 PHONE_DETECTION_CONFIDENCE = float(os.getenv("PHONE_DETECTION_CONFIDENCE", "0.10"))
+PHONE_DETECTION_FALLBACK_CONFIDENCE = float(os.getenv("PHONE_DETECTION_FALLBACK_CONFIDENCE", "0.35"))
+PHONE_DETECTION_STRONG_CONFIDENCE = float(os.getenv("PHONE_DETECTION_STRONG_CONFIDENCE", "0.75"))
+PHONE_DETECTION_MIN_SUPPORT_FRAMES = int(os.getenv("PHONE_DETECTION_MIN_SUPPORT_FRAMES", "2"))
+PHONE_DETECTION_FALLBACK_USE_TILES = os.getenv("PHONE_DETECTION_FALLBACK_USE_TILES", "0") == "1"
 PHONE_DETECTION_IMGSZ = int(os.getenv("PHONE_DETECTION_IMGSZ", "768"))
 PHONE_DETECTION_CLASSES = {
     item.strip().lower()
@@ -402,9 +406,9 @@ def phone_detection_model(model_path):
     return PHONE_YOLO_MODELS[model_path]
 
 
-def yolo_detection_kwargs():
+def yolo_detection_kwargs(confidence):
     kwargs = {
-        "conf": PHONE_DETECTION_CONFIDENCE,
+        "conf": confidence,
         "imgsz": PHONE_DETECTION_IMGSZ,
         "verbose": False
     }
@@ -428,6 +432,9 @@ def detect_phone_sample(sample, model_candidate, class_summary, errors):
     model_path = model_candidate["path"]
     model_role = model_candidate["role"]
 
+    if model_role == "fallback" and sample["region"] != "full" and not PHONE_DETECTION_FALLBACK_USE_TILES:
+        return []
+
     try:
         model = phone_detection_model(model_path)
     except Exception as e:
@@ -435,7 +442,12 @@ def detect_phone_sample(sample, model_candidate, class_summary, errors):
         return []
 
     try:
-        result = model(sample["frame"], **yolo_detection_kwargs())[0]
+        confidence = (
+            PHONE_DETECTION_FALLBACK_CONFIDENCE
+            if model_role == "fallback"
+            else PHONE_DETECTION_CONFIDENCE
+        )
+        result = model(sample["frame"], **yolo_detection_kwargs(confidence))[0]
     except Exception as e:
         errors.append(f"{model_role} model inference failed: {e}")
         return []
@@ -475,6 +487,69 @@ def detect_phone_sample(sample, model_candidate, class_summary, errors):
 
     detections.sort(key=lambda item: item["confidence"], reverse=True)
     return detections
+
+
+def stable_phone_detections(frame_results):
+    all_detections = []
+
+    for frame_item in frame_results:
+        for detection in frame_item["detections"]:
+            item = dict(detection)
+            item["_frame"] = frame_item["frame"]
+            item["_nx"] = detection_center_ratio(item.get("x"), frame_item["frame_width"])
+            item["_ny"] = detection_center_ratio(item.get("y"), frame_item["frame_height"])
+
+            if item["_nx"] is None or item["_ny"] is None:
+                continue
+
+            all_detections.append(item)
+
+    keep = set()
+
+    for index, detection in enumerate(all_detections):
+        support_frames = {
+            other["_frame"]
+            for other in all_detections
+            if abs(other["_nx"] - detection["_nx"]) <= 0.10
+            and abs(other["_ny"] - detection["_ny"]) <= 0.10
+        }
+
+        if (
+            detection["confidence"] >= PHONE_DETECTION_STRONG_CONFIDENCE
+            or len(support_frames) >= PHONE_DETECTION_MIN_SUPPORT_FRAMES
+        ):
+            keep.add(index)
+
+    kept_by_frame = {}
+
+    for index in keep:
+        detection = {
+            key: value
+            for key, value in all_detections[index].items()
+            if not key.startswith("_")
+        }
+        kept_by_frame.setdefault(all_detections[index]["_frame"], []).append(detection)
+
+    for frame_item in frame_results:
+        frame_item["raw_phone_count"] = len(frame_item["detections"])
+        frame_item["detections"] = dedupe_detections(kept_by_frame.get(frame_item["frame"], []))
+        frame_item["detections"] = frame_item["detections"][:8]
+        frame_item["phone_count"] = len(frame_item["detections"])
+
+    return frame_results
+
+
+def detection_center_ratio(value, size):
+    try:
+        value = float(value)
+        size = float(size)
+    except Exception:
+        return None
+
+    if size <= 0:
+        return None
+
+    return max(0.0, min(1.0, value / size))
 
 
 def detection_iou(a, b):
@@ -635,9 +710,10 @@ def run_phone_detection(video_path):
         frame_item["detections"] = frame_item["detections"][:8]
         frame_item["phone_count"] = len(frame_item["detections"])
 
-    frame_results = list(frame_map.values())
+    frame_results = stable_phone_detections(list(frame_map.values()))
     phone_frames = sum(1 for item in frame_results if item["phone_count"] > 0)
     total_phones = sum(item["phone_count"] for item in frame_results)
+    raw_total_phones = sum(item.get("raw_phone_count", item["phone_count"]) for item in frame_results)
     best_confidence = max(
         (
             detection["confidence"]
@@ -657,6 +733,7 @@ def run_phone_detection(video_path):
         "frames_checked": len(frame_results),
         "phone_frames": phone_frames,
         "total_phones": total_phones,
+        "raw_total_phones": raw_total_phones,
         "best_confidence": round(best_confidence, 4),
         "tiles_enabled": PHONE_DETECTION_USE_TILES,
         "tile_grid": PHONE_DETECTION_TILE_GRID if PHONE_DETECTION_USE_TILES else "off",
