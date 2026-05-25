@@ -1026,6 +1026,196 @@ function formatPhoneDetectionErrorMessage(message) {
   return normalized;
 }
 
+function renderSleepDetectionResult(data) {
+  const target = $("sleepDetectionResult");
+
+  if (!target) return;
+
+  if (!data || !data.success) {
+    target.innerHTML = `<span class="tag tag-absent">Sleep detection failed</span>`;
+    return;
+  }
+
+  clearSleepSeatHighlights();
+
+  const confidence = Number(data.best_confidence || 0);
+  const confidenceText = confidence > 0 ? `${(confidence * 100).toFixed(1)}%` : "0%";
+  const statusClass = data.sleep_detected ? "tag tag-absent" : "tag tag-present";
+  const statusText = data.sleep_detected ? "Sleeping detected" : "No sleep detected";
+  const seatLabels = sleepDetectionSeatLabels(data);
+  const detectionText = data.raw_total_sleepers && data.raw_total_sleepers !== data.total_sleepers
+    ? `${data.total_sleepers || 0}/${data.raw_total_sleepers} stable`
+    : `${data.total_sleepers || 0}`;
+  const classesSeen = Array.isArray(data.classes_seen) ? data.classes_seen.slice(0, 4) : [];
+  const classesText = classesSeen
+    .map(item => `${item.class} ${(Number(item.best_confidence || 0) * 100).toFixed(0)}%`)
+    .join(", ");
+  const noLabelsText = !classesText && !data.sleep_detected
+    ? "Local model returned no sleep labels"
+    : "";
+
+  highlightSleepSeats(seatLabels);
+
+  target.innerHTML = `
+    <span class="${statusClass}">${statusText}</span>
+    <span style="margin-left: 0.5rem;">
+      seats: ${seatLabels.length},
+      detections: ${detectionText},
+      frames: ${data.sleep_frames || 0}/${data.frames_checked || 0},
+      best ${confidenceText}${data.tiles_enabled ? `, tiles ${escapeHtml(data.tile_grid || "on")}` : ""}
+    </span>
+    ${seatLabels.length ? `
+      <span style="margin-left: 0.5rem;">
+        seats: ${escapeHtml(seatLabels.join(", "))}
+      </span>
+    ` : ""}
+    ${classesText ? `
+      <div style="margin-top: 0.25rem;">
+        Model saw: ${escapeHtml(classesText)}
+      </div>
+    ` : ""}
+    ${noLabelsText ? `
+      <div style="margin-top: 0.25rem;">
+        ${escapeHtml(noLabelsText)}
+      </div>
+    ` : ""}
+  `;
+}
+
+function sleepDetectionSeatLabels(data) {
+  if (Array.isArray(data?.sleep_seats) && data.sleep_seats.length) {
+    return data.sleep_seats
+      .slice(0, 8)
+      .map(item => {
+        const seatLabel = String(item.seat || "").trim();
+
+        if (!seatLabel) return "";
+
+        const match = seatLabel.match(/^([A-Z])(\d+)$/);
+        let displayName = "Empty";
+
+        if (match) {
+          const row = match[1].charCodeAt(0) - 65;
+          const col = Number(match[2]) - 1;
+          displayName = seatDisplayName(currentSeating[`${row}_${col}`]);
+        }
+
+        return `${seatLabel}${displayName !== "Empty" ? ` ${displayName}` : ""}`;
+      })
+      .filter(Boolean);
+  }
+
+  if (!currentSeatRows || !currentSeatCols || !Array.isArray(data?.frames)) {
+    return [];
+  }
+
+  const seats = new Map();
+
+  data.frames.forEach(frame => {
+    const frameWidth = Number(frame.frame_width || 0);
+    const frameHeight = Number(frame.frame_height || 0);
+    const frameNumber = Number(frame.frame || 0);
+
+    (frame.detections || []).forEach(detection => {
+      const centerX = detectionCenter(detection.x, frameWidth);
+      const centerY = detectionCenter(detection.y, frameHeight);
+
+      if (centerX === null || centerY === null) return;
+
+      const col = Math.max(0, Math.min(currentSeatCols - 1, Math.floor(centerX * currentSeatCols)));
+      const row = Math.max(0, Math.min(currentSeatRows - 1, Math.floor(centerY * currentSeatRows)));
+      const seatLabel = `${String.fromCharCode(65 + row)}${col + 1}`;
+      const seatKey = `${row}_${col}`;
+      const seatValue = currentSeating[seatKey];
+      const item = seats.get(seatLabel) || {
+        label: seatLabel,
+        display: `${seatLabel}${seatDisplayName(seatValue) !== "Empty" ? ` ${seatDisplayName(seatValue)}` : ""}`,
+        frames: new Set(),
+        best: 0
+      };
+
+      item.frames.add(frameNumber);
+      item.best = Math.max(item.best, Number(detection.confidence || 0));
+      seats.set(seatLabel, item);
+    });
+  });
+
+  return Array.from(seats.values())
+    .filter(item => item.frames.size >= 2 || item.best >= 0.90)
+    .sort((a, b) => b.frames.size - a.frames.size || b.best - a.best)
+    .slice(0, 8)
+    .map(item => item.display);
+}
+
+function clearSleepSeatHighlights() {
+  document.querySelectorAll(".seat.sleep-detected").forEach(seat => {
+    seat.classList.remove("sleep-detected");
+    seat.style.outline = "";
+  });
+}
+
+function highlightSleepSeats(labels) {
+  clearSleepSeatHighlights();
+
+  labels.forEach(label => {
+    const seatLabel = label.split(" ")[0];
+    const seat = document.querySelector(`.seat[data-seat-label="${CSS.escape(seatLabel)}"]`);
+
+    if (!seat) return;
+
+    seat.classList.add("sleep-detected");
+    seat.style.outline = "2px solid rgba(251, 191, 36, 0.9)";
+    seat.style.outlineOffset = "2px";
+  });
+}
+
+async function uploadSleepDetectionVideo(file) {
+  if (file.size > MAX_VIDEO_UPLOAD_BYTES) {
+    throw new Error("Sleep detection uploads are limited to 30 MB. Use a shorter clip.");
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  let res;
+
+  try {
+    res = await fetch(`${API}/sleep-detection/upload`, {
+      method: "POST",
+      body: formData
+    });
+  } catch (err) {
+    throw new Error(`Could not upload video for sleep detection. ${err.message}`);
+  }
+
+  const data = await readResponse(res);
+
+  if (!res.ok || !data.success) {
+    const detail = data.details ? ` ${data.details}` : "";
+    throw new Error(`${data.error || "Sleep detection failed."}${detail}`);
+  }
+
+  return data;
+}
+
+function formatSleepDetectionErrorMessage(message) {
+  const normalized = String(message || "Sleep detection failed.");
+
+  if (/model is not ready/i.test(normalized)) {
+    return "Sleep detection model is not ready yet. Train models/sleep_yolo11.pt first.";
+  }
+
+  if (/HTTP 502|502/.test(normalized)) {
+    return "Sleep detection is temporarily unavailable. Please wait a few minutes and try again.";
+  }
+
+  if (/timed out|network|fetch|Failed to fetch|gateway|service unavailable|503/i.test(normalized)) {
+    return "Sleep detection is temporarily unavailable. Please retry in a few minutes.";
+  }
+
+  return normalized;
+}
+
 /* =========================================================
    SEAT MODAL
    ========================================================= */
@@ -1409,6 +1599,7 @@ function wireCameraUI() {
   $("runAiBtn").addEventListener("click", () => $("videoUpload").click());
   $("uploadTriggerBtn").addEventListener("click", () => $("videoUpload").click());
   $("phoneDetectBtn").addEventListener("click", () => $("phoneVideoUpload").click());
+  $("sleepDetectBtn").addEventListener("click", () => $("sleepVideoUpload").click());
 
   $("videoUpload").addEventListener("change", async (e) => {
     const file = e.target.files[0];
@@ -1472,6 +1663,42 @@ function wireCameraUI() {
         const message = formatPhoneDetectionErrorMessage(err.message || "Phone detection failed.");
         resultEl.innerHTML = `
           <span class="tag tag-absent">Phone detection failed</span>
+          <span style="margin-left: 0.5rem;">${escapeHtml(message.slice(0, 260))}</span>
+        `;
+      }
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+      e.target.value = "";
+    }
+  });
+
+  $("sleepVideoUpload").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+
+    if (!file) return;
+
+    const btn = $("sleepDetectBtn");
+    const resultEl = $("sleepDetectionResult");
+    const originalHtml = btn.innerHTML;
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Detecting Sleep...';
+
+    if (resultEl) {
+      resultEl.textContent = "Detecting sleep...";
+    }
+
+    try {
+      const data = await uploadSleepDetectionVideo(file);
+      renderSleepDetectionResult(data);
+    } catch (err) {
+      console.error("Sleep detection error:", err);
+
+      if (resultEl) {
+        const message = formatSleepDetectionErrorMessage(err.message || "Sleep detection failed.");
+        resultEl.innerHTML = `
+          <span class="tag tag-absent">Sleep detection failed</span>
           <span style="margin-left: 0.5rem;">${escapeHtml(message.slice(0, 260))}</span>
         `;
       }

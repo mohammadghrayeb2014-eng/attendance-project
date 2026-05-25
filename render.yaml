@@ -37,3 +37,25 @@ services:
         value: "1"
       - key: PHONE_DETECTION_TILE_GRID
         value: 3x3
+      - key: SLEEP_DETECTION_MODEL
+        value: models/sleep_yolo11.pt
+      - key: SLEEP_DETECTION_MAX_FRAMES
+        value: "20"
+      - key: SLEEP_DETECTION_CONFIDENCE
+        value: "0.85"
+      - key: SLEEP_DETECTION_STRONG_CONFIDENCE
+        value: "0.90"
+      - key: SLEEP_DETECTION_MIN_SUPPORT_FRAMES
+        value: "2"
+      - key: SLEEP_DETECTION_SEAT_ROWS
+        value: "4"
+      - key: SLEEP_DETECTION_SEAT_COLS
+        value: "6"
+      - key: SLEEP_DETECTION_IMGSZ
+        value: "768"
+      - key: SLEEP_DETECTION_USE_TILES
+        value: "0"
+      - key: SLEEP_DETECTION_TILE_GRID
+        value: 3x3
+      - key: SLEEP_DETECTION_CLASSES
+        value: sleep,sleeping,sleeper,asleep,nap,napping,head down,heads down,lying down,laying down,prone,supine,to-left,to-right,to left,to right

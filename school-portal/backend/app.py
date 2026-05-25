@@ -39,6 +39,8 @@ MASTER_CSV = OUTPUT_ATT / "master_attendance.csv"
 VIDEO_UPLOAD_DIR = ROOT / "data" / "classroom_videos"
 PHONE_VIDEO_UPLOAD_DIR = ROOT / "data" / "phone_detection_videos"
 PHONE_OUTPUT_DIR = ROOT / "output" / "phone_detection"
+SLEEP_VIDEO_UPLOAD_DIR = ROOT / "data" / "sleep_detection_videos"
+SLEEP_OUTPUT_DIR = ROOT / "output" / "sleep_detection"
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(30 * 1024 * 1024)))
 GCS_VIDEO_BUCKET = os.getenv("GCS_VIDEO_BUCKET", "").strip()
@@ -66,6 +68,26 @@ PHONE_DETECTION_CLASSES = {
     if item.strip()
 }
 PHONE_YOLO_MODELS = {}
+SLEEP_DETECTION_MODEL = os.getenv("SLEEP_DETECTION_MODEL", "models/sleep_yolo11.pt").strip()
+SLEEP_DETECTION_DEVICE = os.getenv("SLEEP_DETECTION_DEVICE", PHONE_DETECTION_DEVICE).strip()
+SLEEP_DETECTION_MAX_FRAMES = int(os.getenv("SLEEP_DETECTION_MAX_FRAMES", "20"))
+SLEEP_DETECTION_USE_TILES = os.getenv("SLEEP_DETECTION_USE_TILES", "0") != "0"
+SLEEP_DETECTION_TILE_GRID = os.getenv("SLEEP_DETECTION_TILE_GRID", "3x3").strip().lower()
+SLEEP_DETECTION_CONFIDENCE = float(os.getenv("SLEEP_DETECTION_CONFIDENCE", "0.85"))
+SLEEP_DETECTION_STRONG_CONFIDENCE = float(os.getenv("SLEEP_DETECTION_STRONG_CONFIDENCE", "0.90"))
+SLEEP_DETECTION_MIN_SUPPORT_FRAMES = int(os.getenv("SLEEP_DETECTION_MIN_SUPPORT_FRAMES", "2"))
+SLEEP_DETECTION_SEAT_ROWS = int(os.getenv("SLEEP_DETECTION_SEAT_ROWS", str(PHONE_DETECTION_SEAT_ROWS)))
+SLEEP_DETECTION_SEAT_COLS = int(os.getenv("SLEEP_DETECTION_SEAT_COLS", str(PHONE_DETECTION_SEAT_COLS)))
+SLEEP_DETECTION_IMGSZ = int(os.getenv("SLEEP_DETECTION_IMGSZ", "768"))
+SLEEP_DETECTION_CLASSES = {
+    item.strip().lower()
+    for item in os.getenv(
+        "SLEEP_DETECTION_CLASSES",
+        "sleep,sleeping,sleeper,asleep,nap,napping,head down,heads down,lying down,laying down,prone,supine,to-left,to-right,to left,to right"
+    ).split(",")
+    if item.strip()
+}
+SLEEP_YOLO_MODELS = {}
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
@@ -211,6 +233,14 @@ def clear_phone_detection_videos():
             path.unlink()
 
 
+def clear_sleep_detection_videos():
+    SLEEP_VIDEO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    for path in SLEEP_VIDEO_UPLOAD_DIR.iterdir():
+        if path.is_file() and path.suffix.lower() in ALLOWED_VIDEO_EXTENSIONS:
+            path.unlink()
+
+
 def ai_subprocess_env(extra_env=None):
     env = os.environ.copy()
     env.setdefault("PYTHONUNBUFFERED", "1")
@@ -331,6 +361,15 @@ def is_phone_label(label):
     return clean in PHONE_DETECTION_CLASSES or any(item in clean for item in PHONE_DETECTION_CLASSES)
 
 
+def is_sleep_label(label):
+    clean = str(label or "").strip().lower()
+
+    if not clean:
+        return False
+
+    return clean in SLEEP_DETECTION_CLASSES or any(item in clean for item in SLEEP_DETECTION_CLASSES)
+
+
 def resolve_yolo_model_path(value, fallback="yolo11n.pt"):
     configured = Path(value)
 
@@ -392,6 +431,39 @@ def active_phone_detection_models():
     return deduped
 
 
+def active_sleep_detection_models():
+    custom_model = ROOT / "models" / "sleep_yolo11.pt"
+    candidates = []
+
+    if SLEEP_DETECTION_MODEL:
+        model_path = resolve_yolo_model_path(SLEEP_DETECTION_MODEL, "")
+
+        if model_path:
+            candidates.append({
+                "role": "sleep",
+                "path": model_path
+            })
+    elif custom_model.exists():
+        candidates.append({
+            "role": "sleep",
+            "path": str(custom_model)
+        })
+
+    deduped = []
+    seen = set()
+
+    for candidate in candidates:
+        key = candidate["path"]
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        deduped.append(candidate)
+
+    return deduped
+
+
 def phone_detection_model(model_path):
     if model_path in PHONE_YOLO_MODELS:
         return PHONE_YOLO_MODELS[model_path]
@@ -408,15 +480,31 @@ def phone_detection_model(model_path):
     return PHONE_YOLO_MODELS[model_path]
 
 
-def yolo_detection_kwargs(confidence):
+def sleep_detection_model(model_path):
+    if model_path in SLEEP_YOLO_MODELS:
+        return SLEEP_YOLO_MODELS[model_path]
+
+    try:
+        from ultralytics import YOLO
+    except ImportError as e:
+        raise RuntimeError(
+            "Local sleep detector is not installed. Run `pip install -r requirements.txt` "
+            "so the ultralytics YOLO package is available."
+        ) from e
+
+    SLEEP_YOLO_MODELS[model_path] = YOLO(model_path)
+    return SLEEP_YOLO_MODELS[model_path]
+
+
+def yolo_detection_kwargs(confidence, imgsz=PHONE_DETECTION_IMGSZ, device=PHONE_DETECTION_DEVICE):
     kwargs = {
         "conf": confidence,
-        "imgsz": PHONE_DETECTION_IMGSZ,
+        "imgsz": imgsz,
         "verbose": False
     }
 
-    if PHONE_DETECTION_DEVICE:
-        kwargs["device"] = PHONE_DETECTION_DEVICE
+    if device:
+        kwargs["device"] = device
 
     return kwargs
 
@@ -653,7 +741,7 @@ def parse_tile_grid(raw):
     return cols, rows
 
 
-def frame_image_samples(frame):
+def frame_image_samples(frame, use_tiles=PHONE_DETECTION_USE_TILES, tile_grid=PHONE_DETECTION_TILE_GRID):
     height, width = frame.shape[:2]
     yield {
         "region": "full",
@@ -666,10 +754,10 @@ def frame_image_samples(frame):
         "frame": frame
     }
 
-    if not PHONE_DETECTION_USE_TILES:
+    if not use_tiles:
         return
 
-    cols, rows = parse_tile_grid(PHONE_DETECTION_TILE_GRID)
+    cols, rows = parse_tile_grid(tile_grid)
 
     for row in range(rows):
         top = int(row * height / rows)
@@ -695,7 +783,7 @@ def frame_image_samples(frame):
             }
 
 
-def sampled_video_frames(video_path, max_frames):
+def sampled_video_frames(video_path, max_frames, use_tiles=PHONE_DETECTION_USE_TILES, tile_grid=PHONE_DETECTION_TILE_GRID):
     import cv2
     import numpy as np
 
@@ -722,7 +810,7 @@ def sampled_video_frames(video_path, max_frames):
             if not ok:
                 continue
 
-            for sample in frame_image_samples(frame):
+            for sample in frame_image_samples(frame, use_tiles, tile_grid):
                 yield frame_number, sample
     finally:
         cap.release()
@@ -813,6 +901,263 @@ def run_phone_detection(video_path):
     PHONE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     with (PHONE_OUTPUT_DIR / "phone_detection.json").open("w", encoding="utf-8") as f:
+        json.dump(result, f, indent=2)
+
+    return result
+
+
+def detect_sleep_sample(sample, model_candidate, class_summary, errors):
+    model_path = model_candidate["path"]
+    model_role = model_candidate["role"]
+
+    try:
+        model = sleep_detection_model(model_path)
+    except Exception as e:
+        errors.append(f"{model_role} model could not load: {e}")
+        return []
+
+    try:
+        result = model(
+            sample["frame"],
+            **yolo_detection_kwargs(
+                SLEEP_DETECTION_CONFIDENCE,
+                SLEEP_DETECTION_IMGSZ,
+                SLEEP_DETECTION_DEVICE
+            )
+        )[0]
+    except Exception as e:
+        errors.append(f"{model_role} model inference failed: {e}")
+        return []
+
+    names = getattr(model, "names", {}) or getattr(result, "names", {}) or {}
+    detections = []
+    boxes = getattr(result, "boxes", None)
+
+    if boxes is None:
+        return detections
+
+    for box in boxes:
+        cls = int(box.cls[0])
+        label = str(names.get(cls, cls)).strip().lower()
+        confidence = float(box.conf[0])
+
+        if not is_sleep_label(label):
+            continue
+
+        update_class_summary(class_summary, label, confidence)
+
+        x1, y1, x2, y2 = [float(value) for value in box.xyxy[0]]
+        width = max(0.0, x2 - x1)
+        height = max(0.0, y2 - y1)
+
+        detections.append({
+            "class": label,
+            "confidence": confidence,
+            "x": sample["offset_x"] + x1 + (width / 2),
+            "y": sample["offset_y"] + y1 + (height / 2),
+            "width": width,
+            "height": height,
+            "region": sample["region"],
+            "model": model_role
+        })
+
+    detections.sort(key=lambda item: item["confidence"], reverse=True)
+    return detections
+
+
+def stable_sleep_detections(frame_results):
+    all_detections = []
+
+    for frame_item in frame_results:
+        for detection in frame_item["detections"]:
+            item = dict(detection)
+            item["_frame"] = frame_item["frame"]
+            item["_nx"] = detection_center_ratio(item.get("x"), frame_item["frame_width"])
+            item["_ny"] = detection_center_ratio(item.get("y"), frame_item["frame_height"])
+
+            if item["_nx"] is None or item["_ny"] is None:
+                continue
+
+            all_detections.append(item)
+
+    keep = set()
+
+    for index, detection in enumerate(all_detections):
+        support_frames = {
+            other["_frame"]
+            for other in all_detections
+            if abs(other["_nx"] - detection["_nx"]) <= 0.12
+            and abs(other["_ny"] - detection["_ny"]) <= 0.12
+        }
+
+        if (
+            detection["confidence"] >= SLEEP_DETECTION_STRONG_CONFIDENCE
+            or len(support_frames) >= SLEEP_DETECTION_MIN_SUPPORT_FRAMES
+        ):
+            keep.add(index)
+
+    kept_by_frame = {}
+
+    for index in keep:
+        detection = {
+            key: value
+            for key, value in all_detections[index].items()
+            if not key.startswith("_")
+        }
+        kept_by_frame.setdefault(all_detections[index]["_frame"], []).append(detection)
+
+    for frame_item in frame_results:
+        frame_item["raw_sleep_count"] = len(frame_item["detections"])
+        frame_item["detections"] = dedupe_detections(kept_by_frame.get(frame_item["frame"], []))
+        frame_item["detections"] = frame_item["detections"][:12]
+        frame_item["sleep_count"] = len(frame_item["detections"])
+
+    return frame_results
+
+
+def sleep_seat_label_for_detection(detection, frame_item):
+    center_x = detection_center_ratio(detection.get("x"), frame_item.get("frame_width"))
+    center_y = detection_center_ratio(detection.get("y"), frame_item.get("frame_height"))
+
+    if center_x is None or center_y is None:
+        return None
+
+    rows = max(1, SLEEP_DETECTION_SEAT_ROWS)
+    cols = max(1, SLEEP_DETECTION_SEAT_COLS)
+    row = max(0, min(rows - 1, int(center_y * rows)))
+    col = max(0, min(cols - 1, int(center_x * cols)))
+
+    return f"{chr(65 + row)}{col + 1}"
+
+
+def sleep_seat_summary(frame_results):
+    seats = {}
+
+    for frame_item in frame_results:
+        for detection in frame_item["detections"]:
+            label = sleep_seat_label_for_detection(detection, frame_item)
+
+            if not label:
+                continue
+
+            item = seats.setdefault(label, {
+                "seat": label,
+                "frames": set(),
+                "count": 0,
+                "best_confidence": 0.0
+            })
+            item["frames"].add(frame_item["frame"])
+            item["count"] += 1
+            item["best_confidence"] = max(item["best_confidence"], detection["confidence"])
+
+    stable = []
+
+    for item in seats.values():
+        frame_count = len(item["frames"])
+
+        if frame_count < SLEEP_DETECTION_MIN_SUPPORT_FRAMES and item["best_confidence"] < SLEEP_DETECTION_STRONG_CONFIDENCE:
+            continue
+
+        stable.append({
+            "seat": item["seat"],
+            "frames": frame_count,
+            "count": item["count"],
+            "best_confidence": round(item["best_confidence"], 4)
+        })
+
+    stable.sort(key=lambda item: (item["frames"], item["best_confidence"], item["count"]), reverse=True)
+    return stable[:8]
+
+
+def run_sleep_detection(video_path):
+    class_summary = {}
+    detection_errors = []
+    model_candidates = active_sleep_detection_models()
+
+    if not model_candidates:
+        raise RuntimeError("Sleep detection model is not ready. Train models/sleep_yolo11.pt first.")
+
+    frame_map = {}
+
+    for frame_number, sample in sampled_video_frames(
+        video_path,
+        SLEEP_DETECTION_MAX_FRAMES,
+        SLEEP_DETECTION_USE_TILES,
+        SLEEP_DETECTION_TILE_GRID
+    ):
+        detections = []
+
+        for model_candidate in model_candidates:
+            detections.extend(
+                detect_sleep_sample(
+                    sample,
+                    model_candidate,
+                    class_summary,
+                    detection_errors
+                )
+            )
+
+        frame_item = frame_map.setdefault(frame_number, {
+            "frame": frame_number,
+            "frame_width": sample["frame_width"],
+            "frame_height": sample["frame_height"],
+            "sleep_count": 0,
+            "regions_checked": [],
+            "detections": []
+        })
+        frame_item["regions_checked"].append(sample["region"])
+        frame_item["detections"].extend(detections)
+        frame_item["detections"] = dedupe_detections(frame_item["detections"])
+        frame_item["detections"] = frame_item["detections"][:12]
+        frame_item["sleep_count"] = len(frame_item["detections"])
+
+    frame_results = stable_sleep_detections(list(frame_map.values()))
+    sleep_frames = sum(1 for item in frame_results if item["sleep_count"] > 0)
+    total_sleepers = sum(item["sleep_count"] for item in frame_results)
+    raw_total_sleepers = sum(item.get("raw_sleep_count", item["sleep_count"]) for item in frame_results)
+    seat_summary = sleep_seat_summary(frame_results)
+    best_confidence = max(
+        (
+            detection["confidence"]
+            for item in frame_results
+            for detection in item["detections"]
+        ),
+        default=0.0
+    )
+
+    result = {
+        "success": True,
+        "detector": "local_yolo_sleep",
+        "model": model_candidates[0]["path"] if model_candidates else "",
+        "models": model_candidates,
+        "warnings": sorted(set(detection_errors))[:6],
+        "sleep_detected": sleep_frames > 0,
+        "frames_checked": len(frame_results),
+        "sleep_frames": sleep_frames,
+        "total_sleepers": total_sleepers,
+        "raw_total_sleepers": raw_total_sleepers,
+        "sleep_seats": seat_summary,
+        "best_confidence": round(best_confidence, 4),
+        "tiles_enabled": SLEEP_DETECTION_USE_TILES,
+        "tile_grid": SLEEP_DETECTION_TILE_GRID if SLEEP_DETECTION_USE_TILES else "off",
+        "classes_seen": [
+            {
+                "class": label,
+                "count": values["count"],
+                "best_confidence": round(values["best_confidence"], 4)
+            }
+            for label, values in sorted(
+                class_summary.items(),
+                key=lambda pair: pair[1]["best_confidence"],
+                reverse=True
+            )
+        ][:12],
+        "frames": frame_results
+    }
+
+    SLEEP_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    with (SLEEP_OUTPUT_DIR / "sleep_detection.json").open("w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
 
     return result
@@ -1614,6 +1959,52 @@ def upload_phone_detection_video():
             "success": False,
             "filename": filename,
             "error": "Phone detection failed.",
+            "details": str(e)
+        }), 500
+
+    return jsonify({
+        **result,
+        "filename": filename
+    })
+
+
+@app.post("/api/sleep-detection/upload")
+def upload_sleep_detection_video():
+    if "file" not in request.files:
+        return jsonify({"success": False, "error": "No video file uploaded"}), 400
+
+    uploaded = request.files["file"]
+
+    if not uploaded or not uploaded.filename:
+        return jsonify({"success": False, "error": "No video file selected"}), 400
+
+    filename = secure_filename(uploaded.filename)
+    suffix = Path(filename).suffix.lower()
+
+    if suffix not in ALLOWED_VIDEO_EXTENSIONS:
+        return jsonify({
+            "success": False,
+            "error": "Unsupported video type. Upload mp4, mov, avi, or mkv."
+        }), 400
+
+    clear_sleep_detection_videos()
+    video_path = SLEEP_VIDEO_UPLOAD_DIR / filename
+    uploaded.save(video_path)
+
+    try:
+        result = run_sleep_detection(video_path)
+    except ValueError as e:
+        return jsonify({
+            "success": False,
+            "filename": filename,
+            "error": str(e)
+        }), 400
+    except Exception as e:
+        app.logger.exception("Sleep detection failed")
+        return jsonify({
+            "success": False,
+            "filename": filename,
+            "error": "Sleep detection failed.",
             "details": str(e)
         }), 500
 
