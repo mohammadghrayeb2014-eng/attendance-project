@@ -973,6 +973,20 @@ async function uploadPhoneDetectionVideo(file) {
   return data;
 }
 
+function formatPhoneDetectionErrorMessage(message) {
+  const normalized = String(message || "Phone detection failed.");
+
+  if (/Roboflow HTTP 502|HTTP 502|502/.test(normalized)) {
+    return "Roboflow is temporarily unavailable. Please wait a few minutes and try again.";
+  }
+
+  if (/timed out|network|fetch|Failed to fetch|gateway|service unavailable|503/i.test(normalized)) {
+    return "Phone detection is temporarily unavailable. Please retry in a few minutes.";
+  }
+
+  return normalized;
+}
+
 /* =========================================================
    SEAT MODAL
    ========================================================= */
@@ -1416,7 +1430,7 @@ function wireCameraUI() {
       console.error("Phone detection error:", err);
 
       if (resultEl) {
-        const message = String(err.message || "Phone detection failed.");
+        const message = formatPhoneDetectionErrorMessage(err.message || "Phone detection failed.");
         resultEl.innerHTML = `
           <span class="tag tag-absent">Phone detection failed</span>
           <span style="margin-left: 0.5rem;">${escapeHtml(message.slice(0, 260))}</span>
