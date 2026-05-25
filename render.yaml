@@ -27,6 +27,10 @@ services:
         value: "2"
       - key: PHONE_DETECTION_FALLBACK_USE_TILES
         value: "0"
+      - key: PHONE_DETECTION_SEAT_ROWS
+        value: "4"
+      - key: PHONE_DETECTION_SEAT_COLS
+        value: "6"
       - key: PHONE_DETECTION_IMGSZ
         value: "768"
       - key: PHONE_DETECTION_USE_TILES

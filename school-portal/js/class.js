@@ -896,6 +896,28 @@ function detectionCenter(value, size) {
 }
 
 function phoneDetectionSeatLabels(data) {
+  if (Array.isArray(data?.phone_seats) && data.phone_seats.length) {
+    return data.phone_seats
+      .slice(0, 1)
+      .map(item => {
+        const seatLabel = String(item.seat || "").trim();
+
+        if (!seatLabel) return "";
+
+        const match = seatLabel.match(/^([A-Z])(\d+)$/);
+        let displayName = "Empty";
+
+        if (match) {
+          const row = match[1].charCodeAt(0) - 65;
+          const col = Number(match[2]) - 1;
+          displayName = seatDisplayName(currentSeating[`${row}_${col}`]);
+        }
+
+        return `${seatLabel}${displayName !== "Empty" ? ` ${displayName}` : ""}`;
+      })
+      .filter(Boolean);
+  }
+
   if (!currentSeatRows || !currentSeatCols || !Array.isArray(data?.frames)) {
     return [];
   }

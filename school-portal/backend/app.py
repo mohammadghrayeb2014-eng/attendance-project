@@ -54,6 +54,8 @@ PHONE_DETECTION_FALLBACK_CONFIDENCE = float(os.getenv("PHONE_DETECTION_FALLBACK_
 PHONE_DETECTION_STRONG_CONFIDENCE = float(os.getenv("PHONE_DETECTION_STRONG_CONFIDENCE", "0.75"))
 PHONE_DETECTION_MIN_SUPPORT_FRAMES = int(os.getenv("PHONE_DETECTION_MIN_SUPPORT_FRAMES", "2"))
 PHONE_DETECTION_FALLBACK_USE_TILES = os.getenv("PHONE_DETECTION_FALLBACK_USE_TILES", "0") == "1"
+PHONE_DETECTION_SEAT_ROWS = int(os.getenv("PHONE_DETECTION_SEAT_ROWS", "4"))
+PHONE_DETECTION_SEAT_COLS = int(os.getenv("PHONE_DETECTION_SEAT_COLS", "6"))
 PHONE_DETECTION_IMGSZ = int(os.getenv("PHONE_DETECTION_IMGSZ", "768"))
 PHONE_DETECTION_CLASSES = {
     item.strip().lower()
@@ -552,6 +554,60 @@ def detection_center_ratio(value, size):
     return max(0.0, min(1.0, value / size))
 
 
+def seat_label_for_detection(detection, frame_item):
+    center_x = detection_center_ratio(detection.get("x"), frame_item.get("frame_width"))
+    center_y = detection_center_ratio(detection.get("y"), frame_item.get("frame_height"))
+
+    if center_x is None or center_y is None:
+        return None
+
+    rows = max(1, PHONE_DETECTION_SEAT_ROWS)
+    cols = max(1, PHONE_DETECTION_SEAT_COLS)
+    row = max(0, min(rows - 1, int(center_y * rows)))
+    col = max(0, min(cols - 1, int(center_x * cols)))
+
+    return f"{chr(65 + row)}{col + 1}"
+
+
+def phone_seat_summary(frame_results):
+    seats = {}
+
+    for frame_item in frame_results:
+        for detection in frame_item["detections"]:
+            label = seat_label_for_detection(detection, frame_item)
+
+            if not label:
+                continue
+
+            item = seats.setdefault(label, {
+                "seat": label,
+                "frames": set(),
+                "count": 0,
+                "best_confidence": 0.0
+            })
+            item["frames"].add(frame_item["frame"])
+            item["count"] += 1
+            item["best_confidence"] = max(item["best_confidence"], detection["confidence"])
+
+    stable = []
+
+    for item in seats.values():
+        frame_count = len(item["frames"])
+
+        if frame_count < PHONE_DETECTION_MIN_SUPPORT_FRAMES and item["best_confidence"] < PHONE_DETECTION_STRONG_CONFIDENCE:
+            continue
+
+        stable.append({
+            "seat": item["seat"],
+            "frames": frame_count,
+            "count": item["count"],
+            "best_confidence": round(item["best_confidence"], 4)
+        })
+
+    stable.sort(key=lambda item: (item["frames"], item["best_confidence"], item["count"]), reverse=True)
+    return stable[:1]
+
+
 def detection_iou(a, b):
     ax1 = float(a["x"]) - (float(a.get("width") or 0) / 2)
     ay1 = float(a["y"]) - (float(a.get("height") or 0) / 2)
@@ -714,6 +770,7 @@ def run_phone_detection(video_path):
     phone_frames = sum(1 for item in frame_results if item["phone_count"] > 0)
     total_phones = sum(item["phone_count"] for item in frame_results)
     raw_total_phones = sum(item.get("raw_phone_count", item["phone_count"]) for item in frame_results)
+    seat_summary = phone_seat_summary(frame_results)
     best_confidence = max(
         (
             detection["confidence"]
@@ -734,6 +791,7 @@ def run_phone_detection(video_path):
         "phone_frames": phone_frames,
         "total_phones": total_phones,
         "raw_total_phones": raw_total_phones,
+        "phone_seats": seat_summary,
         "best_confidence": round(best_confidence, 4),
         "tiles_enabled": PHONE_DETECTION_USE_TILES,
         "tile_grid": PHONE_DETECTION_TILE_GRID if PHONE_DETECTION_USE_TILES else "off",
