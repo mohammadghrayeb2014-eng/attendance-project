@@ -44,11 +44,13 @@ MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(30 * 1024 * 1024)))
 GCS_VIDEO_BUCKET = os.getenv("GCS_VIDEO_BUCKET", "").strip()
 METADATA_HEADERS = {"Metadata-Flavor": "Google"}
 PHONE_DETECTION_MODEL = os.getenv("PHONE_DETECTION_MODEL", "").strip()
+PHONE_DETECTION_FALLBACK_MODEL = os.getenv("PHONE_DETECTION_FALLBACK_MODEL", "models/yolo11s.pt").strip()
 PHONE_DETECTION_DEVICE = os.getenv("PHONE_DETECTION_DEVICE", "").strip()
-PHONE_DETECTION_MAX_FRAMES = int(os.getenv("PHONE_DETECTION_MAX_FRAMES", "40"))
+PHONE_DETECTION_MAX_FRAMES = int(os.getenv("PHONE_DETECTION_MAX_FRAMES", "60"))
 PHONE_DETECTION_USE_TILES = os.getenv("PHONE_DETECTION_USE_TILES", "1") != "0"
-PHONE_DETECTION_TILE_GRID = os.getenv("PHONE_DETECTION_TILE_GRID", "2x2").strip().lower()
-PHONE_DETECTION_CONFIDENCE = float(os.getenv("PHONE_DETECTION_CONFIDENCE", "0.25"))
+PHONE_DETECTION_TILE_GRID = os.getenv("PHONE_DETECTION_TILE_GRID", "3x3").strip().lower()
+PHONE_DETECTION_CONFIDENCE = float(os.getenv("PHONE_DETECTION_CONFIDENCE", "0.10"))
+PHONE_DETECTION_IMGSZ = int(os.getenv("PHONE_DETECTION_IMGSZ", "768"))
 PHONE_DETECTION_CLASSES = {
     item.strip().lower()
     for item in os.getenv(
@@ -57,8 +59,7 @@ PHONE_DETECTION_CLASSES = {
     ).split(",")
     if item.strip()
 }
-PHONE_YOLO_MODEL = None
-PHONE_YOLO_MODEL_PATH = None
+PHONE_YOLO_MODELS = {}
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
@@ -324,31 +325,70 @@ def is_phone_label(label):
     return clean in PHONE_DETECTION_CLASSES or any(item in clean for item in PHONE_DETECTION_CLASSES)
 
 
-def active_phone_detection_model():
+def resolve_yolo_model_path(value, fallback="yolo11n.pt"):
+    configured = Path(value)
+
+    if configured.is_absolute():
+        return str(configured) if configured.exists() else fallback
+
+    if "/" in value or "\\" in value:
+        configured = ROOT / configured
+        return str(configured) if configured.exists() else fallback
+
+    return value
+
+
+def active_phone_detection_models():
     custom_model = ROOT / "models" / "phone_yolo11.pt"
+    fallback_model = ROOT / "models" / "yolo11s.pt"
+    candidates = []
 
     if PHONE_DETECTION_MODEL:
-        configured = Path(PHONE_DETECTION_MODEL)
+        candidates.append({
+            "role": "custom",
+            "path": resolve_yolo_model_path(PHONE_DETECTION_MODEL)
+        })
+    elif custom_model.exists():
+        candidates.append({
+            "role": "custom",
+            "path": str(custom_model)
+        })
 
-        if configured.is_absolute():
-            return str(configured) if configured.exists() else "yolo11n.pt"
+    if PHONE_DETECTION_FALLBACK_MODEL:
+        candidates.append({
+            "role": "fallback",
+            "path": resolve_yolo_model_path(PHONE_DETECTION_FALLBACK_MODEL)
+        })
+    elif fallback_model.exists():
+        candidates.append({
+            "role": "fallback",
+            "path": str(fallback_model)
+        })
 
-        if "/" in PHONE_DETECTION_MODEL or "\\" in PHONE_DETECTION_MODEL:
-            configured = ROOT / configured
-            return str(configured) if configured.exists() else "yolo11n.pt"
+    if not candidates:
+        candidates.append({
+            "role": "fallback",
+            "path": "yolo11n.pt"
+        })
 
-        return PHONE_DETECTION_MODEL
+    deduped = []
+    seen = set()
 
-    return str(custom_model) if custom_model.exists() else "yolo11n.pt"
+    for candidate in candidates:
+        key = candidate["path"]
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        deduped.append(candidate)
+
+    return deduped
 
 
-def phone_detection_model():
-    global PHONE_YOLO_MODEL, PHONE_YOLO_MODEL_PATH
-
-    model_path = active_phone_detection_model()
-
-    if PHONE_YOLO_MODEL is not None and PHONE_YOLO_MODEL_PATH == model_path:
-        return PHONE_YOLO_MODEL
+def phone_detection_model(model_path):
+    if model_path in PHONE_YOLO_MODELS:
+        return PHONE_YOLO_MODELS[model_path]
 
     try:
         from ultralytics import YOLO
@@ -358,14 +398,14 @@ def phone_detection_model():
             "so the ultralytics YOLO package is available."
         ) from e
 
-    PHONE_YOLO_MODEL = YOLO(model_path)
-    PHONE_YOLO_MODEL_PATH = model_path
-    return PHONE_YOLO_MODEL
+    PHONE_YOLO_MODELS[model_path] = YOLO(model_path)
+    return PHONE_YOLO_MODELS[model_path]
 
 
 def yolo_detection_kwargs():
     kwargs = {
         "conf": PHONE_DETECTION_CONFIDENCE,
+        "imgsz": PHONE_DETECTION_IMGSZ,
         "verbose": False
     }
 
@@ -384,9 +424,22 @@ def update_class_summary(summary, label, confidence):
     current["best_confidence"] = max(current["best_confidence"], confidence)
 
 
-def detect_phone_sample(sample, class_summary):
-    model = phone_detection_model()
-    result = model(sample["frame"], **yolo_detection_kwargs())[0]
+def detect_phone_sample(sample, model_candidate, class_summary, errors):
+    model_path = model_candidate["path"]
+    model_role = model_candidate["role"]
+
+    try:
+        model = phone_detection_model(model_path)
+    except Exception as e:
+        errors.append(f"{model_role} model could not load: {e}")
+        return []
+
+    try:
+        result = model(sample["frame"], **yolo_detection_kwargs())[0]
+    except Exception as e:
+        errors.append(f"{model_role} model inference failed: {e}")
+        return []
+
     names = getattr(model, "names", {}) or getattr(result, "names", {}) or {}
     detections = []
 
@@ -415,7 +468,8 @@ def detect_phone_sample(sample, class_summary):
             "y": sample["offset_y"] + y1 + (height / 2),
             "width": width,
             "height": height,
-            "region": sample["region"]
+            "region": sample["region"],
+            "model": model_role
         })
 
     detections.sort(key=lambda item: item["confidence"], reverse=True)
@@ -548,11 +602,23 @@ def run_phone_detection(video_path):
     total_phones = 0
     best_confidence = 0.0
     class_summary = {}
+    detection_errors = []
+    model_candidates = active_phone_detection_models()
 
     frame_map = {}
 
     for frame_number, sample in sampled_video_frames(video_path, PHONE_DETECTION_MAX_FRAMES):
-        detections = detect_phone_sample(sample, class_summary)
+        detections = []
+
+        for model_candidate in model_candidates:
+            detections.extend(
+                detect_phone_sample(
+                    sample,
+                    model_candidate,
+                    class_summary,
+                    detection_errors
+                )
+            )
 
         frame_item = frame_map.setdefault(frame_number, {
             "frame": frame_number,
@@ -582,8 +648,10 @@ def run_phone_detection(video_path):
 
     result = {
         "success": True,
-        "detector": "local_yolo",
-        "model": active_phone_detection_model(),
+        "detector": "local_yolo_ensemble",
+        "model": model_candidates[0]["path"] if model_candidates else "",
+        "models": model_candidates,
+        "warnings": sorted(set(detection_errors))[:6],
         "phone_detected": phone_frames > 0,
         "frames_checked": len(frame_results),
         "phone_frames": phone_frames,

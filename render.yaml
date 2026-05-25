@@ -13,9 +13,15 @@ services:
         sync: false
       - key: PHONE_DETECTION_MODEL
         value: models/phone_yolo11.pt
+      - key: PHONE_DETECTION_FALLBACK_MODEL
+        value: models/yolo11s.pt
+      - key: PHONE_DETECTION_MAX_FRAMES
+        value: "60"
       - key: PHONE_DETECTION_CONFIDENCE
-        value: "0.25"
+        value: "0.10"
+      - key: PHONE_DETECTION_IMGSZ
+        value: "768"
       - key: PHONE_DETECTION_USE_TILES
         value: "1"
       - key: PHONE_DETECTION_TILE_GRID
-        value: 2x2
+        value: 3x3

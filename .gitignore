@@ -16,9 +16,11 @@ models/*
 !models/face_yunet.onnx
 !models/labels.json
 !models/phone_yolo11.pt
+!models/yolo11s.pt
 classroom_videos/
-yolov8n.pt
-yolo11n.pt
+/yolov8n.pt
+/yolo11n.pt
+/yolo11s.pt
 runs/
 phone_yolo/images/
 phone_yolo/labels/**/*.txt
