@@ -45,6 +45,15 @@ function clearInput(id) {
   if (el) el.value = "";
 }
 
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function showPanel(panelId) {
   if (panelId === "all") {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -327,6 +336,70 @@ function str(v) {
   return v === undefined || v === null ? "" : String(v);
 }
 
+async function loadTeacherPresenceRecords() {
+  const viewEl = document.getElementById("teacherPresenceView");
+  if (!viewEl) return;
+
+  try {
+    viewEl.innerHTML = "Loading teacher presence...";
+
+    const [records, classes] = await Promise.all([
+      fetchJSON(`${API}/teacher-attendance/records`).catch(() => []),
+      fetchJSON(`${API}/classes`).catch(() => [])
+    ]);
+    const classById = new Map(classes.map(c => [str(c.id), c]));
+    const sorted = [...records].sort((a, b) =>
+      str(b.timestamp).localeCompare(str(a.timestamp))
+    );
+
+    if (!sorted.length) {
+      viewEl.innerHTML = '<div class="tag tag-late">No teacher presence records yet.</div>';
+      return;
+    }
+
+    const rows = sorted.slice(0, 30).map(record => {
+      const status = record.status || (record.teacher_present ? "Present" : "Absent");
+      const statusClass = status === "Present" ? "tag tag-present" : "tag tag-absent";
+      const className = record.class_name || classById.get(str(record.class_id))?.name || `Class ${record.class_id || ""}`;
+      const confidence = Number(record.best_confidence || 0);
+
+      return `
+        <tr style="border-bottom:1px solid rgba(0,0,0,0.05);">
+          <td style="padding:0.75rem;">${escapeHtml(record.teacher_username)}</td>
+          <td style="padding:0.75rem;">${escapeHtml(className)}</td>
+          <td style="padding:0.75rem;">${escapeHtml(record.subject_name || "-")}</td>
+          <td style="padding:0.75rem;">${escapeHtml(record.timestamp || record.date || "-")}</td>
+          <td style="padding:0.75rem;text-align:center;">
+            <span class="${statusClass}">${escapeHtml(status)}</span>
+          </td>
+          <td style="padding:0.75rem;text-align:center;">${record.teacher_frames || 0}/${record.frames_checked || 0}</td>
+          <td style="padding:0.75rem;text-align:center;">${confidence ? `${(confidence * 100).toFixed(0)}%` : "-"}</td>
+        </tr>
+      `;
+    }).join("");
+
+    viewEl.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+        <thead>
+          <tr style="text-align:left;border-bottom:1px solid var(--border-color);">
+            <th style="padding:0.5rem;">Teacher Username</th>
+            <th style="padding:0.5rem;">Class</th>
+            <th style="padding:0.5rem;">Subject</th>
+            <th style="padding:0.5rem;">Time</th>
+            <th style="padding:0.5rem;text-align:center;">Status</th>
+            <th style="padding:0.5rem;text-align:center;">Board Frames</th>
+            <th style="padding:0.5rem;text-align:center;">Best</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  } catch (err) {
+    console.error("Failed to load teacher presence:", err);
+    viewEl.innerHTML = '<div class="tag tag-absent">Error loading teacher presence.</div>';
+  }
+}
+
 async function loadSystemReports() {
   const viewEl = document.getElementById("adminReportsView");
   if (!viewEl) return;
@@ -457,6 +530,7 @@ function wireEvents() {
   document.getElementById("addClassBtn")?.addEventListener("click", addClass);
   document.getElementById("addSubjectBtn")?.addEventListener("click", addSubject);
   document.getElementById("assignBtn")?.addEventListener("click", createAssignment);
+  document.getElementById("refreshTeacherPresenceBtn")?.addEventListener("click", loadTeacherPresenceRecords);
 
   const navMap = {
     navDashboard: "all",
@@ -465,6 +539,7 @@ function wireEvents() {
     navClasses: "cardClasses",
     navSubjects: "cardSubjects",
     navAssignments: "cardAssignments",
+    navTeacherPresence: "teacherPresencePanel",
     navReports: "adminReportsPanel"
   };
 
@@ -517,6 +592,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   await Promise.all([
     loadAllSelects(),
-    loadDashboardStats()
+    loadDashboardStats(),
+    loadTeacherPresenceRecords()
   ]);
 });

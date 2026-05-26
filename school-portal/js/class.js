@@ -633,6 +633,34 @@ function currentSeatedStudentNames() {
     .filter(Boolean);
 }
 
+function currentAssignmentMetadata() {
+  let assignment = {};
+
+  try {
+    assignment = JSON.parse(localStorage.getItem(ACTIVE_KEY) || "{}");
+  } catch {
+    assignment = {};
+  }
+
+  return {
+    teacher_username: assignment.teacher_username || getCurrentUser()?.username || "",
+    class_id: assignment.class_id || "",
+    subject_id: assignment.subject_id || "",
+    class_name: assignment.class_name || "",
+    subject_name: assignment.subject_name || ""
+  };
+}
+
+function appendAssignmentMetadata(formData) {
+  const metadata = currentAssignmentMetadata();
+
+  Object.entries(metadata).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      formData.append(key, value);
+    }
+  });
+}
+
 function escapeHtml(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
@@ -668,7 +696,8 @@ async function processGcsVideoWithProgress(objectName) {
       },
       body: JSON.stringify({
         object_name: objectName,
-        expected_names: currentSeatedStudentNames()
+        expected_names: currentSeatedStudentNames(),
+        ...currentAssignmentMetadata()
       })
     });
   } catch (err) {
@@ -793,6 +822,7 @@ async function uploadLargeVideoViaGcs(file) {
 async function uploadSmallVideoDirectly(file) {
   const formData = new FormData();
   formData.append("file", file);
+  appendAssignmentMetadata(formData);
 
   let res;
 
@@ -1621,7 +1651,10 @@ function wireCameraUI() {
         : await uploadSmallVideoDirectly(file);
 
       applyAiAttendanceResults(data.results || []);
-      alert("Video processed successfully: " + data.filename);
+      const teacherStatus = data.teacher_presence?.status
+        ? ` Teacher: ${data.teacher_presence.status}.`
+        : "";
+      alert(`Video processed successfully: ${data.filename}.${teacherStatus}`);
 
     } catch (err) {
       console.error("Upload error:", err);

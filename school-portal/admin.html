@@ -52,6 +52,7 @@
       <a href="#" class="nav-link" id="navClasses"><i class="fa-solid fa-users-rectangle"></i> Rooms</a>
       <a href="#" class="nav-link" id="navSubjects"><i class="fa-solid fa-book-open"></i> Courses</a>
       <a href="#" class="nav-link" id="navAssignments"><i class="fa-solid fa-link"></i> Linkages</a>
+      <a href="#" class="nav-link" id="navTeacherPresence"><i class="fa-solid fa-person-chalkboard"></i> Teacher Presence</a>
       <div style="margin-top: auto;">
         <a href="#" id="logoutBtn" class="nav-link" style="color: #ef4444;"><i class="fa-solid fa-power-off"></i> Exit</a>
       </div>
@@ -193,6 +194,16 @@
         <button id="assignBtn" class="btn-premium w-full">Commit Assignment</button>
         <div id="adminMsg" class="error-toast"></div>
       </div>
+    </div>
+
+    <div class="card" id="teacherPresencePanel" style="margin-top: 2rem;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;">
+        <h3><i class="fa-solid fa-person-chalkboard gradient-text"></i> Teacher Presence</h3>
+        <button id="refreshTeacherPresenceBtn" class="btn btn-outline" style="padding:0.5rem 1rem;font-size:0.8rem;">
+          <i class="fa-solid fa-rotate"></i> Refresh
+        </button>
+      </div>
+      <div id="teacherPresenceView" style="margin-top:1rem;">Loading teacher presence...</div>
     </div>
   </main>
 

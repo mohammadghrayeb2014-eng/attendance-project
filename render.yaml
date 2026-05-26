@@ -59,3 +59,21 @@ services:
         value: 3x3
       - key: SLEEP_DETECTION_CLASSES
         value: sleep,sleeping,sleeper,asleep,nap,napping,head down,heads down,lying down,laying down,prone,supine,to-left,to-right,to left,to right
+      - key: TEACHER_PRESENCE_MODEL
+        value: models/yolo11s.pt
+      - key: TEACHER_PRESENCE_MAX_FRAMES
+        value: "20"
+      - key: TEACHER_PRESENCE_CONFIDENCE
+        value: "0.35"
+      - key: TEACHER_PRESENCE_MIN_FRAMES
+        value: "3"
+      - key: TEACHER_PRESENCE_STRONG_CONFIDENCE
+        value: "0.85"
+      - key: TEACHER_PRESENCE_IMGSZ
+        value: "768"
+      - key: TEACHER_PRESENCE_BOARD_ZONE
+        value: "0.05,0.00,0.95,0.70"
+      - key: TEACHER_PRESENCE_MIN_PERSON_HEIGHT
+        value: "0.18"
+      - key: TEACHER_PRESENCE_MIN_ASPECT
+        value: "1.05"

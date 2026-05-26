@@ -88,6 +88,17 @@ SLEEP_DETECTION_CLASSES = {
     if item.strip()
 }
 SLEEP_YOLO_MODELS = {}
+TEACHER_PRESENCE_MODEL = os.getenv("TEACHER_PRESENCE_MODEL", "models/yolo11s.pt").strip()
+TEACHER_PRESENCE_DEVICE = os.getenv("TEACHER_PRESENCE_DEVICE", PHONE_DETECTION_DEVICE).strip()
+TEACHER_PRESENCE_MAX_FRAMES = int(os.getenv("TEACHER_PRESENCE_MAX_FRAMES", "20"))
+TEACHER_PRESENCE_CONFIDENCE = float(os.getenv("TEACHER_PRESENCE_CONFIDENCE", "0.35"))
+TEACHER_PRESENCE_MIN_FRAMES = int(os.getenv("TEACHER_PRESENCE_MIN_FRAMES", "3"))
+TEACHER_PRESENCE_STRONG_CONFIDENCE = float(os.getenv("TEACHER_PRESENCE_STRONG_CONFIDENCE", "0.85"))
+TEACHER_PRESENCE_IMGSZ = int(os.getenv("TEACHER_PRESENCE_IMGSZ", "768"))
+TEACHER_PRESENCE_BOARD_ZONE = os.getenv("TEACHER_PRESENCE_BOARD_ZONE", "0.05,0.00,0.95,0.70").strip()
+TEACHER_PRESENCE_MIN_PERSON_HEIGHT = float(os.getenv("TEACHER_PRESENCE_MIN_PERSON_HEIGHT", "0.18"))
+TEACHER_PRESENCE_MIN_ASPECT = float(os.getenv("TEACHER_PRESENCE_MIN_ASPECT", "1.05"))
+TEACHER_YOLO_MODELS = {}
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
@@ -494,6 +505,22 @@ def sleep_detection_model(model_path):
 
     SLEEP_YOLO_MODELS[model_path] = YOLO(model_path)
     return SLEEP_YOLO_MODELS[model_path]
+
+
+def teacher_presence_model(model_path):
+    if model_path in TEACHER_YOLO_MODELS:
+        return TEACHER_YOLO_MODELS[model_path]
+
+    try:
+        from ultralytics import YOLO
+    except ImportError as e:
+        raise RuntimeError(
+            "Local teacher presence detector is not installed. Run `pip install -r requirements.txt` "
+            "so the ultralytics YOLO package is available."
+        ) from e
+
+    TEACHER_YOLO_MODELS[model_path] = YOLO(model_path)
+    return TEACHER_YOLO_MODELS[model_path]
 
 
 def yolo_detection_kwargs(confidence, imgsz=PHONE_DETECTION_IMGSZ, device=PHONE_DETECTION_DEVICE):
@@ -1167,6 +1194,253 @@ def run_sleep_detection(video_path):
     return result
 
 
+def parse_teacher_board_zone(raw):
+    default = (0.05, 0.0, 0.95, 0.70)
+
+    try:
+        values = [float(item.strip()) for item in str(raw or "").split(",")]
+    except Exception:
+        return default
+
+    if len(values) != 4:
+        return default
+
+    x1, y1, x2, y2 = [max(0.0, min(1.0, value)) for value in values]
+
+    if x2 <= x1 or y2 <= y1:
+        return default
+
+    return x1, y1, x2, y2
+
+
+def normalized_box_overlap_with_zone(box, zone):
+    x1, y1, x2, y2 = box
+    zx1, zy1, zx2, zy2 = zone
+    overlap_x1 = max(x1, zx1)
+    overlap_y1 = max(y1, zy1)
+    overlap_x2 = min(x2, zx2)
+    overlap_y2 = min(y2, zy2)
+    overlap = max(0.0, overlap_x2 - overlap_x1) * max(0.0, overlap_y2 - overlap_y1)
+    box_area = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+    return overlap / box_area if box_area > 0 else 0.0
+
+
+def detect_teacher_presence_sample(sample, model_path, board_zone, errors):
+    try:
+        model = teacher_presence_model(model_path)
+    except Exception as e:
+        errors.append(f"teacher model could not load: {e}")
+        return [], 0
+
+    try:
+        result = model(
+            sample["frame"],
+            **yolo_detection_kwargs(
+                TEACHER_PRESENCE_CONFIDENCE,
+                TEACHER_PRESENCE_IMGSZ,
+                TEACHER_PRESENCE_DEVICE
+            )
+        )[0]
+    except Exception as e:
+        errors.append(f"teacher model inference failed: {e}")
+        return [], 0
+
+    names = getattr(model, "names", {}) or getattr(result, "names", {}) or {}
+    boxes = getattr(result, "boxes", None)
+
+    if boxes is None:
+        return [], 0
+
+    frame_width = max(1, int(sample["frame_width"]))
+    frame_height = max(1, int(sample["frame_height"]))
+    detections = []
+    raw_people = 0
+
+    for box in boxes:
+        cls = int(box.cls[0])
+        label = str(names.get(cls, cls)).strip().lower()
+
+        if label != "person":
+            continue
+
+        raw_people += 1
+        confidence = float(box.conf[0])
+        x1, y1, x2, y2 = [float(value) for value in box.xyxy[0]]
+        width = max(0.0, x2 - x1)
+        height = max(0.0, y2 - y1)
+        norm_box = (
+            max(0.0, min(1.0, x1 / frame_width)),
+            max(0.0, min(1.0, y1 / frame_height)),
+            max(0.0, min(1.0, x2 / frame_width)),
+            max(0.0, min(1.0, y2 / frame_height))
+        )
+        center_x = (norm_box[0] + norm_box[2]) / 2
+        center_y = (norm_box[1] + norm_box[3]) / 2
+        zone_overlap = normalized_box_overlap_with_zone(norm_box, board_zone)
+        height_ratio = height / frame_height
+        aspect_ratio = height / max(1.0, width)
+        center_in_zone = (
+            board_zone[0] <= center_x <= board_zone[2]
+            and board_zone[1] <= center_y <= board_zone[3]
+        )
+
+        if not center_in_zone and zone_overlap < 0.35:
+            continue
+
+        if height_ratio < TEACHER_PRESENCE_MIN_PERSON_HEIGHT:
+            continue
+
+        if aspect_ratio < TEACHER_PRESENCE_MIN_ASPECT:
+            continue
+
+        detections.append({
+            "class": label,
+            "confidence": confidence,
+            "x": x1 + (width / 2),
+            "y": y1 + (height / 2),
+            "width": width,
+            "height": height,
+            "height_ratio": round(height_ratio, 4),
+            "aspect_ratio": round(aspect_ratio, 4),
+            "zone_overlap": round(zone_overlap, 4)
+        })
+
+    detections.sort(key=lambda item: (item["confidence"], item["height_ratio"]), reverse=True)
+    return detections[:3], raw_people
+
+
+def run_teacher_presence_detection(video_path):
+    model_path = resolve_yolo_model_path(TEACHER_PRESENCE_MODEL, "yolo11s.pt")
+    board_zone = parse_teacher_board_zone(TEACHER_PRESENCE_BOARD_ZONE)
+    frame_results = []
+    errors = []
+
+    for frame_number, sample in sampled_video_frames(
+        video_path,
+        TEACHER_PRESENCE_MAX_FRAMES,
+        False,
+        "off"
+    ):
+        detections, raw_people = detect_teacher_presence_sample(
+            sample,
+            model_path,
+            board_zone,
+            errors
+        )
+        frame_results.append({
+            "frame": frame_number,
+            "frame_width": sample["frame_width"],
+            "frame_height": sample["frame_height"],
+            "raw_person_count": raw_people,
+            "teacher_count": len(detections),
+            "detections": detections[:1]
+        })
+
+    teacher_frames = sum(1 for item in frame_results if item["teacher_count"] > 0)
+    raw_person_total = sum(item["raw_person_count"] for item in frame_results)
+    best_confidence = max(
+        (
+            detection["confidence"]
+            for item in frame_results
+            for detection in item["detections"]
+        ),
+        default=0.0
+    )
+    teacher_present = (
+        teacher_frames >= TEACHER_PRESENCE_MIN_FRAMES
+        or best_confidence >= TEACHER_PRESENCE_STRONG_CONFIDENCE
+    )
+
+    return {
+        "success": True,
+        "detector": "teacher_board_person_yolo",
+        "model": model_path,
+        "warnings": sorted(set(errors))[:6],
+        "teacher_present": teacher_present,
+        "status": "Present" if teacher_present else "Absent",
+        "reason": "person_near_board" if teacher_present else "no_teacher_near_board",
+        "frames_checked": len(frame_results),
+        "teacher_frames": teacher_frames,
+        "raw_person_total": raw_person_total,
+        "best_confidence": round(best_confidence, 4),
+        "board_zone": [round(value, 4) for value in board_zone],
+        "frames": frame_results[:20]
+    }
+
+
+def int_or_none(value):
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def teacher_presence_metadata(source):
+    teacher_username = normalize_username(source.get("teacher_username"))
+    class_id = int_or_none(source.get("class_id"))
+    subject_id = int_or_none(source.get("subject_id"))
+    class_name = str(source.get("class_name") or "").strip()
+    subject_name = str(source.get("subject_name") or "").strip()
+
+    if class_id and not class_name:
+        _, class_doc = get_first("classes", "id", class_id)
+        class_name = (class_doc or {}).get("name", "")
+
+    if subject_id and not subject_name:
+        _, subject_doc = get_first("subjects", "id", subject_id)
+        subject_name = (subject_doc or {}).get("name", "")
+
+    if not teacher_username or not class_id:
+        return None
+
+    return {
+        "teacher_username": teacher_username,
+        "class_id": class_id,
+        "subject_id": subject_id,
+        "class_name": class_name or f"Class {class_id}",
+        "subject_name": subject_name or ""
+    }
+
+
+def save_teacher_presence_record(metadata, result, filename):
+    if not metadata:
+        return None
+
+    now = datetime.now()
+    record = {
+        "id": next_id("teacher_attendance"),
+        "teacher_username": metadata["teacher_username"],
+        "class_id": metadata["class_id"],
+        "subject_id": metadata.get("subject_id"),
+        "class_name": metadata.get("class_name", ""),
+        "subject_name": metadata.get("subject_name", ""),
+        "date": now.strftime("%Y-%m-%d"),
+        "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "status": result["status"],
+        "teacher_present": bool(result["teacher_present"]),
+        "reason": result["reason"],
+        "filename": filename,
+        "frames_checked": result["frames_checked"],
+        "teacher_frames": result["teacher_frames"],
+        "best_confidence": result["best_confidence"]
+    }
+
+    db.collection("teacher_attendance").add(record)
+    return record
+
+
+def analyze_and_save_teacher_presence(video_path, filename, metadata):
+    if not metadata:
+        return None
+
+    result = run_teacher_presence_detection(video_path)
+    record = save_teacher_presence_record(metadata, result, filename)
+    return {
+        **result,
+        "record": record
+    }
+
+
 def save_uploaded_video_from_gcs(object_name):
     bucket_name = normalized_gcs_bucket_name()
 
@@ -1834,6 +2108,11 @@ def get_attendance_history():
     return jsonify(docs_to_list("attendance"))
 
 
+@app.get("/api/teacher-attendance/records")
+def get_teacher_attendance_records():
+    return jsonify(docs_to_list("teacher_attendance"))
+
+
 @app.post("/api/attendance/save")
 def save_attendance():
     payload = request.get_json(force=True, silent=True) or {}
@@ -1904,6 +2183,18 @@ def upload_attendance_video():
 
     video_path = VIDEO_UPLOAD_DIR / filename
     uploaded.save(video_path)
+    teacher_presence = None
+    teacher_metadata = teacher_presence_metadata(request.form)
+
+    try:
+        teacher_presence = analyze_and_save_teacher_presence(video_path, filename, teacher_metadata)
+    except Exception as e:
+        app.logger.exception("Teacher presence detection failed")
+        teacher_presence = {
+            "success": False,
+            "error": "Teacher presence detection failed.",
+            "details": str(e)
+        }
 
     result, error = run_ai_attendance()
 
@@ -1921,6 +2212,7 @@ def upload_attendance_video():
     return jsonify({
         "success": True,
         "filename": filename,
+        "teacher_presence": teacher_presence,
         "results": attendance_csv_rows(),
         "stdout": result.stdout[-4000:]
     })
@@ -2079,6 +2371,7 @@ def process_gcs_attendance_video():
     payload = request.get_json(force=True, silent=True) or {}
     object_name = payload.get("object_name") or ""
     expected_names = expected_names_from_payload(payload)
+    teacher_metadata = teacher_presence_metadata(payload)
 
     if not object_name.startswith("attendance-uploads/"):
         return jsonify({"success": False, "error": "Invalid uploaded video object."}), 400
@@ -2087,6 +2380,19 @@ def process_gcs_attendance_video():
         filename = save_uploaded_video_from_gcs(object_name)
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+    video_path = VIDEO_UPLOAD_DIR / filename
+    teacher_presence = None
+
+    try:
+        teacher_presence = analyze_and_save_teacher_presence(video_path, filename, teacher_metadata)
+    except Exception as e:
+        app.logger.exception("Teacher presence detection failed")
+        teacher_presence = {
+            "success": False,
+            "error": "Teacher presence detection failed.",
+            "details": str(e)
+        }
 
     result, error = run_ai_attendance(expected_names)
 
@@ -2104,6 +2410,7 @@ def process_gcs_attendance_video():
     return jsonify({
         "success": True,
         "filename": filename,
+        "teacher_presence": teacher_presence,
         "results": attendance_csv_rows(),
         "stdout": result.stdout[-4000:]
     })
@@ -2114,6 +2421,7 @@ def process_gcs_attendance_video_stream():
     payload = request.get_json(force=True, silent=True) or {}
     object_name = payload.get("object_name") or ""
     expected_names = expected_names_from_payload(payload)
+    teacher_metadata = teacher_presence_metadata(payload)
 
     if not object_name.startswith("attendance-uploads/"):
         return jsonify({"success": False, "error": "Invalid uploaded video object."}), 400
@@ -2139,6 +2447,24 @@ def process_gcs_attendance_video_stream():
                 app.logger.exception("Could not download uploaded GCS video")
                 yield ndjson_event(type="error", success=False, error=str(e))
                 return
+
+            teacher_presence = None
+            video_path = VIDEO_UPLOAD_DIR / filename
+
+            try:
+                yield ndjson_event(type="status", message="Checking teacher near the board...")
+                teacher_presence = analyze_and_save_teacher_presence(
+                    video_path,
+                    filename,
+                    teacher_metadata
+                )
+            except Exception as e:
+                app.logger.exception("Teacher presence detection failed")
+                teacher_presence = {
+                    "success": False,
+                    "error": "Teacher presence detection failed.",
+                    "details": str(e)
+                }
 
             script_path = ROOT / "scripts" / "run_attendance_arcface.py"
 
@@ -2274,6 +2600,7 @@ def process_gcs_attendance_video_stream():
                 type="complete",
                 success=True,
                 filename=filename,
+                teacher_presence=teacher_presence,
                 results=attendance_csv_rows(),
                 stdout=stdout[-4000:]
             )
