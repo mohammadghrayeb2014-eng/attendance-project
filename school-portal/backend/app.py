@@ -2177,6 +2177,65 @@ def upload_teacher_presence_video():
     })
 
 
+@app.post("/api/teacher-attendance/process-gcs-video")
+def process_gcs_teacher_presence_video():
+    payload = request.get_json(force=True, silent=True) or {}
+    object_name = payload.get("object_name") or ""
+    metadata = teacher_presence_metadata(payload)
+
+    if not metadata:
+        return jsonify({
+            "success": False,
+            "error": "Teacher and class are required for teacher presence."
+        }), 400
+
+    if not object_name.startswith("attendance-uploads/"):
+        return jsonify({
+            "success": False,
+            "error": "Invalid uploaded video object."
+        }), 400
+
+    try:
+        filename = save_uploaded_video_from_gcs(object_name)
+    except ValueError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 400
+    except Exception as e:
+        app.logger.exception("Could not download teacher presence GCS video")
+        return jsonify({
+            "success": False,
+            "error": "Could not download uploaded video.",
+            "details": str(e)
+        }), 500
+
+    video_path = VIDEO_UPLOAD_DIR / filename
+
+    try:
+        teacher_presence = analyze_and_save_teacher_presence(video_path, filename, metadata)
+    except ValueError as e:
+        return jsonify({
+            "success": False,
+            "filename": filename,
+            "error": str(e)
+        }), 400
+    except Exception as e:
+        app.logger.exception("Teacher presence detection failed")
+        return jsonify({
+            "success": False,
+            "filename": filename,
+            "error": "Teacher presence detection failed.",
+            "details": str(e)
+        }), 500
+
+    return jsonify({
+        "success": True,
+        "filename": filename,
+        "teacher_presence": teacher_presence
+    })
+
+
 @app.post("/api/attendance/save")
 def save_attendance():
     payload = request.get_json(force=True, silent=True) or {}

@@ -1,5 +1,5 @@
 const API = "/api";
-const TEACHER_PRESENCE_MAX_UPLOAD_BYTES = 30 * 1024 * 1024;
+const TEACHER_PRESENCE_DIRECT_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 /* =========================================================
    Utilities
@@ -7,13 +7,32 @@ const TEACHER_PRESENCE_MAX_UPLOAD_BYTES = 30 * 1024 * 1024;
 
 async function fetchJSON(url, options = {}) {
   const res = await fetch(url, options);
-  const data = await res.json().catch(() => ({}));
+  const data = await readResponse(res);
 
   if (!res.ok) {
-    throw new Error(data.error || "Request failed");
+    const detail = data.details ? ` ${data.details}` : "";
+    throw new Error(`${data.error || `Request failed (${res.status})`}${detail}`);
   }
 
   return data;
+}
+
+async function readResponse(res) {
+  const text = await res.text();
+
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    const plain = text
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 240);
+
+    return {
+      error: plain || `Server returned ${res.status} ${res.statusText}`
+    };
+  }
 }
 
 function option(select, value, text) {
@@ -377,15 +396,7 @@ function selectedPresenceValue(id) {
   return document.getElementById(id)?.value || "";
 }
 
-async function uploadTeacherPresenceVideo(file) {
-  if (!file) {
-    throw new Error("Choose a video first.");
-  }
-
-  if (file.size > TEACHER_PRESENCE_MAX_UPLOAD_BYTES) {
-    throw new Error("Teacher presence uploads are limited to 30 MB. Use a shorter clip.");
-  }
-
+function teacherPresencePayload() {
   const teacherUsername = selectedPresenceValue("presenceTeacherSelect");
   const classId = selectedPresenceValue("presenceClassSelect");
   const subjectId = selectedPresenceValue("presenceSubjectSelect");
@@ -394,18 +405,99 @@ async function uploadTeacherPresenceVideo(file) {
     throw new Error("Choose a teacher and class before uploading.");
   }
 
+  return {
+    teacher_username: teacherUsername,
+    class_id: classId,
+    subject_id: subjectId || undefined
+  };
+}
+
+function appendTeacherPresenceMetadata(formData, payload) {
+  formData.append("teacher_username", payload.teacher_username);
+  formData.append("class_id", payload.class_id);
+
+  if (payload.subject_id) {
+    formData.append("subject_id", payload.subject_id);
+  }
+}
+
+async function uploadTeacherPresenceVideo(file) {
+  if (!file) {
+    throw new Error("Choose a video first.");
+  }
+
+  const payload = teacherPresencePayload();
+
+  if (file.size > TEACHER_PRESENCE_DIRECT_UPLOAD_BYTES) {
+    return uploadTeacherPresenceVideoViaGcs(file, payload);
+  }
+
+  return uploadTeacherPresenceVideoDirectly(file, payload);
+}
+
+async function uploadTeacherPresenceVideoDirectly(file, payload) {
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("teacher_username", teacherUsername);
-  formData.append("class_id", classId);
-
-  if (subjectId) {
-    formData.append("subject_id", subjectId);
-  }
+  appendTeacherPresenceMetadata(formData, payload);
 
   return fetchJSON(`${API}/teacher-attendance/upload`, {
     method: "POST",
     body: formData
+  });
+}
+
+async function uploadTeacherPresenceVideoViaGcs(file, payload) {
+  setTeacherPresenceMsg("Preparing large video upload...");
+
+  const ticket = await fetchJSON(`${API}/attendance/gcs-upload-url`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      filename: file.name,
+      content_type: file.type || "application/octet-stream"
+    })
+  });
+
+  setTeacherPresenceMsg("Uploading video to Cloud Storage...");
+
+  let uploadRes;
+
+  try {
+    uploadRes = await fetch(ticket.upload_url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": file.type || "application/octet-stream"
+      },
+      body: file
+    });
+  } catch (err) {
+    throw new Error(
+      `Cloud Storage upload could not be reached. ${err.message}. ` +
+      "Check the bucket CORS policy allows PUT from this site."
+    );
+  }
+
+  if (!uploadRes.ok) {
+    const uploadText = await uploadRes.text();
+    throw new Error(
+      `Cloud Storage upload failed (${uploadRes.status}). ` +
+      uploadText.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300)
+    );
+  }
+
+  setTeacherPresenceMsg("Checking uploaded video for teacher near the board...");
+
+  return fetchJSON(`${API}/teacher-attendance/process-gcs-video`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      object_name: ticket.object_name,
+      ...payload
+    })
   });
 }
 
