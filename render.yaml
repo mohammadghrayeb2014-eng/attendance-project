@@ -82,6 +82,6 @@ services:
       - key: TEACHER_PRESENCE_MIN_ASPECT
         value: "1.15"
       - key: TEACHER_PRESENCE_REQUIRE_FACE
-        value: "1"
+        value: "0"
       - key: TEACHER_PRESENCE_FACE_CONFIDENCE
         value: "0.60"

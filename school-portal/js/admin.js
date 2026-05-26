@@ -522,9 +522,12 @@ async function handleTeacherPresenceUploadChange(event) {
     const best = confidence ? `, best ${(confidence * 100).toFixed(0)}%` : "";
     const needed = Number(result.min_required_frames || 0);
     const requirement = needed ? `, need ${needed}` : "";
+    const faceFrames = Number(result.face_teacher_frames || result.face_frames || 0);
+    const rawPersonFrames = Number(result.raw_person_frames || 0);
+    const detail = `, faces ${faceFrames}, raw people ${rawPersonFrames}`;
 
     setTeacherPresenceMsg(
-      `Teacher ${result.status || "checked"}: ${result.teacher_frames || 0}/${result.frames_checked || 0} teacher frames${requirement}${best}.`,
+      `Teacher ${result.status || "checked"}: ${result.teacher_frames || 0}/${result.frames_checked || 0} teacher frames${requirement}${best}${detail}.`,
       result.status === "Absent"
     );
     await loadTeacherPresenceRecords();

@@ -102,7 +102,7 @@ TEACHER_PRESENCE_MIN_PERSON_HEIGHT = float(os.getenv("TEACHER_PRESENCE_MIN_PERSO
 TEACHER_PRESENCE_MIN_PERSON_WIDTH = float(os.getenv("TEACHER_PRESENCE_MIN_PERSON_WIDTH", "0.06"))
 TEACHER_PRESENCE_MIN_BOTTOM = float(os.getenv("TEACHER_PRESENCE_MIN_BOTTOM", "0.45"))
 TEACHER_PRESENCE_MIN_ASPECT = float(os.getenv("TEACHER_PRESENCE_MIN_ASPECT", "1.15"))
-TEACHER_PRESENCE_REQUIRE_FACE = os.getenv("TEACHER_PRESENCE_REQUIRE_FACE", "1") != "0"
+TEACHER_PRESENCE_REQUIRE_FACE = os.getenv("TEACHER_PRESENCE_REQUIRE_FACE", "0") != "0"
 TEACHER_PRESENCE_FACE_CONFIDENCE = float(os.getenv("TEACHER_PRESENCE_FACE_CONFIDENCE", "0.60"))
 TEACHER_YOLO_MODELS = {}
 
@@ -1240,9 +1240,6 @@ def normalized_box_overlap_with_zone(box, zone):
 
 
 def detect_teacher_faces(frame, errors):
-    if not TEACHER_PRESENCE_REQUIRE_FACE:
-        return []
-
     try:
         import cv2
     except Exception as e:
@@ -1459,7 +1456,13 @@ def run_teacher_presence_detection(video_path):
         })
 
     teacher_frames = sum(1 for item in frame_results if item["teacher_count"] > 0)
+    face_teacher_frames = sum(
+        1
+        for item in frame_results
+        if any(detection.get("face_confidence") is not None for detection in item["detections"])
+    )
     face_frames = sum(1 for item in frame_results if item.get("face_count", 0) > 0)
+    raw_person_frames = sum(1 for item in frame_results if item["raw_person_count"] > 0)
     raw_person_total = sum(item["raw_person_count"] for item in frame_results)
     best_confidence = max(
         (
@@ -1477,7 +1480,7 @@ def run_teacher_presence_detection(video_path):
 
     return {
         "success": True,
-        "detector": "teacher_board_person_face_yolo",
+        "detector": "teacher_board_person_optional_face_yolo",
         "model": model_path,
         "warnings": sorted(set(errors))[:6],
         "teacher_present": teacher_present,
@@ -1485,7 +1488,9 @@ def run_teacher_presence_detection(video_path):
         "reason": "person_near_board" if teacher_present else "no_teacher_near_board",
         "frames_checked": len(frame_results),
         "teacher_frames": teacher_frames,
+        "face_teacher_frames": face_teacher_frames,
         "face_frames": face_frames,
+        "raw_person_frames": raw_person_frames,
         "min_required_frames": min_required_frames,
         "raw_person_total": raw_person_total,
         "best_confidence": round(best_confidence, 4),
@@ -1548,7 +1553,9 @@ def save_teacher_presence_record(metadata, result, filename):
         "filename": filename,
         "frames_checked": result["frames_checked"],
         "teacher_frames": result["teacher_frames"],
+        "face_teacher_frames": result.get("face_teacher_frames", 0),
         "face_frames": result.get("face_frames", 0),
+        "raw_person_frames": result.get("raw_person_frames", 0),
         "min_required_frames": result.get("min_required_frames", 0),
         "best_confidence": result["best_confidence"]
     }
