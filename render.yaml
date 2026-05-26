@@ -69,6 +69,10 @@ services:
         value: "8"
       - key: TEACHER_PRESENCE_MIN_FRAME_RATIO
         value: "0.45"
+      - key: TEACHER_PRESENCE_FACE_PERSON_MIN_FRAMES
+        value: "5"
+      - key: TEACHER_PRESENCE_FACE_PERSON_MIN_RATIO
+        value: "0.25"
       - key: TEACHER_PRESENCE_IMGSZ
         value: "768"
       - key: TEACHER_PRESENCE_BOARD_ZONE

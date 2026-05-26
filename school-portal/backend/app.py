@@ -96,6 +96,8 @@ TEACHER_PRESENCE_MAX_FRAMES = int(os.getenv("TEACHER_PRESENCE_MAX_FRAMES", "20")
 TEACHER_PRESENCE_CONFIDENCE = float(os.getenv("TEACHER_PRESENCE_CONFIDENCE", "0.35"))
 TEACHER_PRESENCE_MIN_FRAMES = int(os.getenv("TEACHER_PRESENCE_MIN_FRAMES", "8"))
 TEACHER_PRESENCE_MIN_FRAME_RATIO = float(os.getenv("TEACHER_PRESENCE_MIN_FRAME_RATIO", "0.45"))
+TEACHER_PRESENCE_FACE_PERSON_MIN_FRAMES = int(os.getenv("TEACHER_PRESENCE_FACE_PERSON_MIN_FRAMES", "5"))
+TEACHER_PRESENCE_FACE_PERSON_MIN_RATIO = float(os.getenv("TEACHER_PRESENCE_FACE_PERSON_MIN_RATIO", "0.25"))
 TEACHER_PRESENCE_IMGSZ = int(os.getenv("TEACHER_PRESENCE_IMGSZ", "768"))
 TEACHER_PRESENCE_BOARD_ZONE = os.getenv("TEACHER_PRESENCE_BOARD_ZONE", "0.05,0.00,0.95,0.70").strip()
 TEACHER_PRESENCE_MIN_PERSON_HEIGHT = float(os.getenv("TEACHER_PRESENCE_MIN_PERSON_HEIGHT", "0.25"))
@@ -1322,12 +1324,21 @@ def face_matches_teacher_box(face, norm_box, frame_width, frame_height):
     )
 
 
+def face_center_in_zone(face, zone, frame_width, frame_height):
+    face_center_x = ((face["x1"] + face["x2"]) / 2) / frame_width
+    face_center_y = ((face["y1"] + face["y2"]) / 2) / frame_height
+    return (
+        zone[0] <= face_center_x <= zone[2]
+        and zone[1] <= face_center_y <= zone[3]
+    )
+
+
 def detect_teacher_presence_sample(sample, model_path, board_zone, errors):
     try:
         model = teacher_presence_model(model_path)
     except Exception as e:
         errors.append(f"teacher model could not load: {e}")
-        return [], 0, 0
+        return [], 0, 0, 0
 
     try:
         result = model(
@@ -1340,19 +1351,24 @@ def detect_teacher_presence_sample(sample, model_path, board_zone, errors):
         )[0]
     except Exception as e:
         errors.append(f"teacher model inference failed: {e}")
-        return [], 0, 0
+        return [], 0, 0, 0
 
     names = getattr(model, "names", {}) or getattr(result, "names", {}) or {}
     boxes = getattr(result, "boxes", None)
 
     if boxes is None:
-        return [], 0, 0
+        return [], 0, 0, 0
 
     frame_width = max(1, int(sample["frame_width"]))
     frame_height = max(1, int(sample["frame_height"]))
     detections = []
     raw_people = 0
     face_detections = detect_teacher_faces(sample["frame"], errors)
+    face_zone_count = sum(
+        1
+        for face in face_detections
+        if face_center_in_zone(face, board_zone, frame_width, frame_height)
+    )
 
     for box in boxes:
         cls = int(box.cls[0])
@@ -1424,7 +1440,7 @@ def detect_teacher_presence_sample(sample, model_path, board_zone, errors):
         })
 
     detections.sort(key=lambda item: (item["confidence"], item["height_ratio"]), reverse=True)
-    return detections[:3], raw_people, len(face_detections)
+    return detections[:3], raw_people, len(face_detections), face_zone_count
 
 
 def run_teacher_presence_detection(video_path):
@@ -1439,7 +1455,7 @@ def run_teacher_presence_detection(video_path):
         False,
         "off"
     ):
-        detections, raw_people, face_count = detect_teacher_presence_sample(
+        detections, raw_people, face_count, face_zone_count = detect_teacher_presence_sample(
             sample,
             model_path,
             board_zone,
@@ -1451,6 +1467,7 @@ def run_teacher_presence_detection(video_path):
             "frame_height": sample["frame_height"],
             "raw_person_count": raw_people,
             "face_count": face_count,
+            "face_zone_count": face_zone_count,
             "teacher_count": len(detections),
             "detections": detections[:1]
         })
@@ -1462,6 +1479,12 @@ def run_teacher_presence_detection(video_path):
         if any(detection.get("face_confidence") is not None for detection in item["detections"])
     )
     face_frames = sum(1 for item in frame_results if item.get("face_count", 0) > 0)
+    face_zone_frames = sum(1 for item in frame_results if item.get("face_zone_count", 0) > 0)
+    face_person_frames = sum(
+        1
+        for item in frame_results
+        if item["raw_person_count"] > 0 and item.get("face_zone_count", 0) > 0
+    )
     raw_person_frames = sum(1 for item in frame_results if item["raw_person_count"] > 0)
     raw_person_total = sum(item["raw_person_count"] for item in frame_results)
     best_confidence = max(
@@ -1476,7 +1499,13 @@ def run_teacher_presence_detection(video_path):
         TEACHER_PRESENCE_MIN_FRAMES,
         math.ceil(len(frame_results) * TEACHER_PRESENCE_MIN_FRAME_RATIO)
     ) if frame_results else TEACHER_PRESENCE_MIN_FRAMES
-    teacher_present = teacher_frames >= min_required_frames
+    min_face_person_frames = max(
+        TEACHER_PRESENCE_FACE_PERSON_MIN_FRAMES,
+        math.ceil(len(frame_results) * TEACHER_PRESENCE_FACE_PERSON_MIN_RATIO)
+    ) if frame_results else TEACHER_PRESENCE_FACE_PERSON_MIN_FRAMES
+    body_match_present = teacher_frames >= min_required_frames
+    face_person_present = face_person_frames >= min_face_person_frames
+    teacher_present = body_match_present or face_person_present
 
     return {
         "success": True,
@@ -1485,13 +1514,22 @@ def run_teacher_presence_detection(video_path):
         "warnings": sorted(set(errors))[:6],
         "teacher_present": teacher_present,
         "status": "Present" if teacher_present else "Absent",
-        "reason": "person_near_board" if teacher_present else "no_teacher_near_board",
+        "reason": (
+            "person_near_board"
+            if body_match_present
+            else "face_and_person_near_board"
+            if face_person_present
+            else "no_teacher_near_board"
+        ),
         "frames_checked": len(frame_results),
         "teacher_frames": teacher_frames,
         "face_teacher_frames": face_teacher_frames,
         "face_frames": face_frames,
+        "face_zone_frames": face_zone_frames,
+        "face_person_frames": face_person_frames,
         "raw_person_frames": raw_person_frames,
         "min_required_frames": min_required_frames,
+        "min_face_person_frames": min_face_person_frames,
         "raw_person_total": raw_person_total,
         "best_confidence": round(best_confidence, 4),
         "board_zone": [round(value, 4) for value in board_zone],
@@ -1555,8 +1593,11 @@ def save_teacher_presence_record(metadata, result, filename):
         "teacher_frames": result["teacher_frames"],
         "face_teacher_frames": result.get("face_teacher_frames", 0),
         "face_frames": result.get("face_frames", 0),
+        "face_zone_frames": result.get("face_zone_frames", 0),
+        "face_person_frames": result.get("face_person_frames", 0),
         "raw_person_frames": result.get("raw_person_frames", 0),
         "min_required_frames": result.get("min_required_frames", 0),
+        "min_face_person_frames": result.get("min_face_person_frames", 0),
         "best_confidence": result["best_confidence"]
     }
 
