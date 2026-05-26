@@ -66,14 +66,22 @@ services:
       - key: TEACHER_PRESENCE_CONFIDENCE
         value: "0.35"
       - key: TEACHER_PRESENCE_MIN_FRAMES
-        value: "3"
-      - key: TEACHER_PRESENCE_STRONG_CONFIDENCE
-        value: "0.85"
+        value: "8"
+      - key: TEACHER_PRESENCE_MIN_FRAME_RATIO
+        value: "0.45"
       - key: TEACHER_PRESENCE_IMGSZ
         value: "768"
       - key: TEACHER_PRESENCE_BOARD_ZONE
         value: "0.05,0.00,0.95,0.70"
       - key: TEACHER_PRESENCE_MIN_PERSON_HEIGHT
-        value: "0.18"
+        value: "0.25"
+      - key: TEACHER_PRESENCE_MIN_PERSON_WIDTH
+        value: "0.06"
+      - key: TEACHER_PRESENCE_MIN_BOTTOM
+        value: "0.45"
       - key: TEACHER_PRESENCE_MIN_ASPECT
-        value: "1.05"
+        value: "1.15"
+      - key: TEACHER_PRESENCE_REQUIRE_FACE
+        value: "1"
+      - key: TEACHER_PRESENCE_FACE_CONFIDENCE
+        value: "0.60"

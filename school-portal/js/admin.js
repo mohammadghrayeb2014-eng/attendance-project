@@ -520,9 +520,11 @@ async function handleTeacherPresenceUploadChange(event) {
     const result = data.teacher_presence || {};
     const confidence = Number(result.best_confidence || 0);
     const best = confidence ? `, best ${(confidence * 100).toFixed(0)}%` : "";
+    const needed = Number(result.min_required_frames || 0);
+    const requirement = needed ? `, need ${needed}` : "";
 
     setTeacherPresenceMsg(
-      `Teacher ${result.status || "checked"}: ${result.teacher_frames || 0}/${result.frames_checked || 0} board frames${best}.`,
+      `Teacher ${result.status || "checked"}: ${result.teacher_frames || 0}/${result.frames_checked || 0} teacher frames${requirement}${best}.`,
       result.status === "Absent"
     );
     await loadTeacherPresenceRecords();
@@ -590,7 +592,7 @@ async function loadTeacherPresenceRecords() {
             <th style="padding:0.5rem;">Subject</th>
             <th style="padding:0.5rem;">Time</th>
             <th style="padding:0.5rem;text-align:center;">Status</th>
-            <th style="padding:0.5rem;text-align:center;">Board Frames</th>
+            <th style="padding:0.5rem;text-align:center;">Teacher Frames</th>
             <th style="padding:0.5rem;text-align:center;">Best</th>
           </tr>
         </thead>
