@@ -203,6 +203,25 @@
           <i class="fa-solid fa-rotate"></i> Refresh
         </button>
       </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:1rem;align-items:end;margin-top:1rem;" class="mobile-stack">
+        <div class="input-group">
+          <label>Teacher</label>
+          <select id="presenceTeacherSelect" class="input-field"></select>
+        </div>
+        <div class="input-group">
+          <label>Class</label>
+          <select id="presenceClassSelect" class="input-field"></select>
+        </div>
+        <div class="input-group">
+          <label>Subject (optional)</label>
+          <select id="presenceSubjectSelect" class="input-field"></select>
+        </div>
+        <button id="uploadTeacherPresenceBtn" class="btn-premium" style="white-space:nowrap;">
+          <i class="fa-solid fa-upload"></i> Upload Video
+        </button>
+        <input type="file" id="teacherPresenceVideoUpload" accept="video/*" style="display:none;">
+      </div>
+      <div id="teacherPresenceMsg" class="error-toast" style="margin-top:0.75rem;"></div>
       <div id="teacherPresenceView" style="margin-top:1rem;">Loading teacher presence...</div>
     </div>
   </main>

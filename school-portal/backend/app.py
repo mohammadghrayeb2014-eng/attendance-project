@@ -41,6 +41,7 @@ PHONE_VIDEO_UPLOAD_DIR = ROOT / "data" / "phone_detection_videos"
 PHONE_OUTPUT_DIR = ROOT / "output" / "phone_detection"
 SLEEP_VIDEO_UPLOAD_DIR = ROOT / "data" / "sleep_detection_videos"
 SLEEP_OUTPUT_DIR = ROOT / "output" / "sleep_detection"
+TEACHER_PRESENCE_VIDEO_UPLOAD_DIR = ROOT / "data" / "teacher_presence_videos"
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(30 * 1024 * 1024)))
 GCS_VIDEO_BUCKET = os.getenv("GCS_VIDEO_BUCKET", "").strip()
@@ -248,6 +249,14 @@ def clear_sleep_detection_videos():
     SLEEP_VIDEO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
     for path in SLEEP_VIDEO_UPLOAD_DIR.iterdir():
+        if path.is_file() and path.suffix.lower() in ALLOWED_VIDEO_EXTENSIONS:
+            path.unlink()
+
+
+def clear_teacher_presence_videos():
+    TEACHER_PRESENCE_VIDEO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    for path in TEACHER_PRESENCE_VIDEO_UPLOAD_DIR.iterdir():
         if path.is_file() and path.suffix.lower() in ALLOWED_VIDEO_EXTENSIONS:
             path.unlink()
 
@@ -2111,6 +2120,61 @@ def get_attendance_history():
 @app.get("/api/teacher-attendance/records")
 def get_teacher_attendance_records():
     return jsonify(docs_to_list("teacher_attendance"))
+
+
+@app.post("/api/teacher-attendance/upload")
+def upload_teacher_presence_video():
+    if "file" not in request.files:
+        return jsonify({"success": False, "error": "No video file uploaded"}), 400
+
+    metadata = teacher_presence_metadata(request.form)
+
+    if not metadata:
+        return jsonify({
+            "success": False,
+            "error": "Teacher and class are required for teacher presence."
+        }), 400
+
+    uploaded = request.files["file"]
+
+    if not uploaded or not uploaded.filename:
+        return jsonify({"success": False, "error": "No video file selected"}), 400
+
+    filename = secure_filename(uploaded.filename)
+    suffix = Path(filename).suffix.lower()
+
+    if suffix not in ALLOWED_VIDEO_EXTENSIONS:
+        return jsonify({
+            "success": False,
+            "error": "Unsupported video type. Upload mp4, mov, avi, or mkv."
+        }), 400
+
+    clear_teacher_presence_videos()
+    video_path = TEACHER_PRESENCE_VIDEO_UPLOAD_DIR / filename
+    uploaded.save(video_path)
+
+    try:
+        teacher_presence = analyze_and_save_teacher_presence(video_path, filename, metadata)
+    except ValueError as e:
+        return jsonify({
+            "success": False,
+            "filename": filename,
+            "error": str(e)
+        }), 400
+    except Exception as e:
+        app.logger.exception("Teacher presence detection failed")
+        return jsonify({
+            "success": False,
+            "filename": filename,
+            "error": "Teacher presence detection failed.",
+            "details": str(e)
+        }), 500
+
+    return jsonify({
+        "success": True,
+        "filename": filename,
+        "teacher_presence": teacher_presence
+    })
 
 
 @app.post("/api/attendance/save")

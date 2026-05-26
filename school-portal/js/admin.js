@@ -1,4 +1,5 @@
 const API = "/api";
+const TEACHER_PRESENCE_MAX_UPLOAD_BYTES = 30 * 1024 * 1024;
 
 /* =========================================================
    Utilities
@@ -78,26 +79,53 @@ async function loadAllSelects() {
       fetchJSON(`${API}/subjects`)
     ]);
 
-    const tSel = document.getElementById("teacherSelect");
-    const cSel = document.getElementById("classSelect");
-    const sSel = document.getElementById("subjectSelect");
+    const teacherSelects = [
+      document.getElementById("teacherSelect"),
+      document.getElementById("presenceTeacherSelect")
+    ].filter(Boolean);
+    const classSelects = [
+      document.getElementById("classSelect"),
+      document.getElementById("presenceClassSelect")
+    ].filter(Boolean);
+    const assignmentSubjectSelect = document.getElementById("subjectSelect");
+    const presenceSubjectSelect = document.getElementById("presenceSubjectSelect");
+    const subjectSelects = [
+      assignmentSubjectSelect,
+      presenceSubjectSelect
+    ].filter(Boolean);
 
-    if (!tSel || !cSel || !sSel) return;
+    if (!teacherSelects.length && !classSelects.length && !subjectSelects.length) return;
 
-    tSel.innerHTML = '<option value="">-- Choose Teacher --</option>';
-    cSel.innerHTML = '<option value="">-- Choose Class --</option>';
-    sSel.innerHTML = '<option value="">-- Choose Subject --</option>';
+    teacherSelects.forEach(sel => {
+      sel.innerHTML = '<option value="">-- Choose Teacher --</option>';
+    });
+    classSelects.forEach(sel => {
+      sel.innerHTML = '<option value="">-- Choose Class --</option>';
+    });
+    if (assignmentSubjectSelect) {
+      assignmentSubjectSelect.innerHTML = '<option value="">-- Choose Subject --</option>';
+    }
+
+    if (presenceSubjectSelect) {
+      presenceSubjectSelect.innerHTML = '<option value="">-- Optional Subject --</option>';
+    }
 
     teachers.forEach(t => {
-      option(tSel, t.username, `${t.name || t.username} (${t.username})`);
+      teacherSelects.forEach(sel => {
+        option(sel, t.username, `${t.name || t.username} (${t.username})`);
+      });
     });
 
     classes.forEach(c => {
-      option(cSel, c.id, `${c.name} [${c.rows}x${c.cols}]`);
+      classSelects.forEach(sel => {
+        option(sel, c.id, `${c.name} [${c.rows}x${c.cols}]`);
+      });
     });
 
     subjects.forEach(s => {
-      option(sSel, s.id, s.name);
+      subjectSelects.forEach(sel => {
+        option(sel, s.id, s.name);
+      });
     });
 
   } catch (e) {
@@ -336,6 +364,89 @@ function str(v) {
   return v === undefined || v === null ? "" : String(v);
 }
 
+function setTeacherPresenceMsg(text, isError = false) {
+  const el = document.getElementById("teacherPresenceMsg");
+  if (!el) return;
+
+  el.className = isError ? "tag tag-absent" : "tag tag-present";
+  el.textContent = text || "";
+  el.style.display = text ? "inline-block" : "none";
+}
+
+function selectedPresenceValue(id) {
+  return document.getElementById(id)?.value || "";
+}
+
+async function uploadTeacherPresenceVideo(file) {
+  if (!file) {
+    throw new Error("Choose a video first.");
+  }
+
+  if (file.size > TEACHER_PRESENCE_MAX_UPLOAD_BYTES) {
+    throw new Error("Teacher presence uploads are limited to 30 MB. Use a shorter clip.");
+  }
+
+  const teacherUsername = selectedPresenceValue("presenceTeacherSelect");
+  const classId = selectedPresenceValue("presenceClassSelect");
+  const subjectId = selectedPresenceValue("presenceSubjectSelect");
+
+  if (!teacherUsername || !classId) {
+    throw new Error("Choose a teacher and class before uploading.");
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("teacher_username", teacherUsername);
+  formData.append("class_id", classId);
+
+  if (subjectId) {
+    formData.append("subject_id", subjectId);
+  }
+
+  return fetchJSON(`${API}/teacher-attendance/upload`, {
+    method: "POST",
+    body: formData
+  });
+}
+
+async function handleTeacherPresenceUploadChange(event) {
+  const input = event.target;
+  const file = input.files?.[0];
+  const uploadBtn = document.getElementById("uploadTeacherPresenceBtn");
+  const originalButtonHtml = uploadBtn?.innerHTML || "";
+
+  if (!file) return;
+
+  try {
+    if (uploadBtn) {
+      uploadBtn.disabled = true;
+      uploadBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Checking...';
+    }
+
+    setTeacherPresenceMsg("Checking video for teacher near the board...");
+    const data = await uploadTeacherPresenceVideo(file);
+    const result = data.teacher_presence || {};
+    const confidence = Number(result.best_confidence || 0);
+    const best = confidence ? `, best ${(confidence * 100).toFixed(0)}%` : "";
+
+    setTeacherPresenceMsg(
+      `Teacher ${result.status || "checked"}: ${result.teacher_frames || 0}/${result.frames_checked || 0} board frames${best}.`,
+      result.status === "Absent"
+    );
+    await loadTeacherPresenceRecords();
+  } catch (err) {
+    console.error("Teacher presence upload failed:", err);
+    setTeacherPresenceMsg(err.message, true);
+  } finally {
+    if (uploadBtn) {
+      uploadBtn.disabled = false;
+      uploadBtn.innerHTML = originalButtonHtml;
+    }
+
+    input.value = "";
+  }
+}
+
 async function loadTeacherPresenceRecords() {
   const viewEl = document.getElementById("teacherPresenceView");
   if (!viewEl) return;
@@ -531,6 +642,19 @@ function wireEvents() {
   document.getElementById("addSubjectBtn")?.addEventListener("click", addSubject);
   document.getElementById("assignBtn")?.addEventListener("click", createAssignment);
   document.getElementById("refreshTeacherPresenceBtn")?.addEventListener("click", loadTeacherPresenceRecords);
+  document.getElementById("teacherPresenceVideoUpload")?.addEventListener("change", handleTeacherPresenceUploadChange);
+  document.getElementById("uploadTeacherPresenceBtn")?.addEventListener("click", () => {
+    try {
+      if (!selectedPresenceValue("presenceTeacherSelect") || !selectedPresenceValue("presenceClassSelect")) {
+        throw new Error("Choose a teacher and class before uploading.");
+      }
+
+      setTeacherPresenceMsg("");
+      document.getElementById("teacherPresenceVideoUpload")?.click();
+    } catch (err) {
+      setTeacherPresenceMsg(err.message, true);
+    }
+  });
 
   const navMap = {
     navDashboard: "all",
