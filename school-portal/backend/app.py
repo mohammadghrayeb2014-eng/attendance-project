@@ -73,9 +73,9 @@ SLEEP_DETECTION_DEVICE = os.getenv("SLEEP_DETECTION_DEVICE", PHONE_DETECTION_DEV
 SLEEP_DETECTION_MAX_FRAMES = int(os.getenv("SLEEP_DETECTION_MAX_FRAMES", "20"))
 SLEEP_DETECTION_USE_TILES = os.getenv("SLEEP_DETECTION_USE_TILES", "0") != "0"
 SLEEP_DETECTION_TILE_GRID = os.getenv("SLEEP_DETECTION_TILE_GRID", "3x3").strip().lower()
-SLEEP_DETECTION_CONFIDENCE = float(os.getenv("SLEEP_DETECTION_CONFIDENCE", "0.85"))
+SLEEP_DETECTION_CONFIDENCE = float(os.getenv("SLEEP_DETECTION_CONFIDENCE", "0.35"))
 SLEEP_DETECTION_STRONG_CONFIDENCE = float(os.getenv("SLEEP_DETECTION_STRONG_CONFIDENCE", "0.90"))
-SLEEP_DETECTION_MIN_SUPPORT_FRAMES = int(os.getenv("SLEEP_DETECTION_MIN_SUPPORT_FRAMES", "2"))
+SLEEP_DETECTION_MIN_SUPPORT_FRAMES = int(os.getenv("SLEEP_DETECTION_MIN_SUPPORT_FRAMES", "5"))
 SLEEP_DETECTION_SEAT_ROWS = int(os.getenv("SLEEP_DETECTION_SEAT_ROWS", str(PHONE_DETECTION_SEAT_ROWS)))
 SLEEP_DETECTION_SEAT_COLS = int(os.getenv("SLEEP_DETECTION_SEAT_COLS", str(PHONE_DETECTION_SEAT_COLS)))
 SLEEP_DETECTION_IMGSZ = int(os.getenv("SLEEP_DETECTION_IMGSZ", "768"))
@@ -1124,6 +1124,10 @@ def run_sleep_detection(video_path):
         ),
         default=0.0
     )
+    sleep_detected = (
+        sleep_frames >= SLEEP_DETECTION_MIN_SUPPORT_FRAMES
+        or best_confidence >= SLEEP_DETECTION_STRONG_CONFIDENCE
+    )
 
     result = {
         "success": True,
@@ -1131,7 +1135,7 @@ def run_sleep_detection(video_path):
         "model": model_candidates[0]["path"] if model_candidates else "",
         "models": model_candidates,
         "warnings": sorted(set(detection_errors))[:6],
-        "sleep_detected": sleep_frames > 0,
+        "sleep_detected": sleep_detected,
         "frames_checked": len(frame_results),
         "sleep_frames": sleep_frames,
         "total_sleepers": total_sleepers,

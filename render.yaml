@@ -42,11 +42,11 @@ services:
       - key: SLEEP_DETECTION_MAX_FRAMES
         value: "20"
       - key: SLEEP_DETECTION_CONFIDENCE
-        value: "0.85"
+        value: "0.35"
       - key: SLEEP_DETECTION_STRONG_CONFIDENCE
         value: "0.90"
       - key: SLEEP_DETECTION_MIN_SUPPORT_FRAMES
-        value: "2"
+        value: "5"
       - key: SLEEP_DETECTION_SEAT_ROWS
         value: "4"
       - key: SLEEP_DETECTION_SEAT_COLS
