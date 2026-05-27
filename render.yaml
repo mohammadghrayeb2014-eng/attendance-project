@@ -59,6 +59,12 @@ services:
         value: 3x3
       - key: SLEEP_DETECTION_CLASSES
         value: sleep,sleeping,sleeper,asleep,nap,napping,head down,heads down,lying down,laying down,prone,supine,to-left,to-right,to left,to right
+      - key: AI_SEAT_VERIFY
+        value: "1"
+      - key: AI_SEAT_VERIFY_MIN_HITS
+        value: "2"
+      - key: AI_SEAT_VERIFY_CANDIDATE_MAX_DISTANCE
+        value: "0.62"
       - key: TEACHER_PRESENCE_MODEL
         value: models/yolo11s.pt
       - key: TEACHER_PRESENCE_MAX_FRAMES

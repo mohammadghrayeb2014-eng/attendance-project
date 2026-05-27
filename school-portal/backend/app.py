@@ -224,6 +224,9 @@ def attendance_csv_rows():
             "present": present,
             "status": "Present" if present == "YES" else "Absent",
             "hits": row.get("hits"),
+            "seat_hits": row.get("seat_hits"),
+            "seat_label": row.get("seat_label"),
+            "verification": row.get("verification"),
             "avg_confidence": raw_confidence,
             "match_distance": raw_confidence
         }
@@ -294,19 +297,29 @@ def ai_runner_time_budget_seconds():
     return max(60, ai_timeout_seconds() - 180)
 
 
-def run_ai_attendance(expected_names=None):
+def run_ai_attendance(expected_names=None, seat_context=None):
     script_path = ROOT / "scripts" / "run_attendance_arcface.py"
 
     if not script_path.exists():
         return None, ("AI runner script is missing", 500)
 
     try:
+        if not expected_names and seat_context:
+            expected_names = expected_names_from_seat_context(seat_context)
+
         extra_env = {
             "AI_RUNNER_TIME_BUDGET_SECONDS": str(ai_runner_time_budget_seconds())
         }
 
         if expected_names:
             extra_env["AI_EXPECTED_NAMES"] = ",".join(expected_names)
+
+        if seat_context:
+            extra_env["AI_SEAT_MAP"] = json.dumps(
+                seat_context,
+                ensure_ascii=False,
+                separators=(",", ":")
+            )
 
         result = subprocess.run(
             [sys.executable, str(script_path)],
@@ -1692,6 +1705,152 @@ def expected_names_from_payload(payload):
     return clean_names[:80]
 
 
+def parse_seat_key(key):
+    parts = str(key or "").split("_", 1)
+
+    if len(parts) != 2:
+        return None
+
+    try:
+        row = int(parts[0])
+        col = int(parts[1])
+    except Exception:
+        return None
+
+    if row < 0 or col < 0:
+        return None
+
+    return row, col
+
+
+def normalize_seat_context(raw_context):
+    if not raw_context:
+        return None
+
+    if isinstance(raw_context, str):
+        try:
+            raw_context = json.loads(raw_context)
+        except Exception:
+            return None
+
+    if not isinstance(raw_context, dict):
+        return None
+
+    try:
+        rows = int(raw_context.get("rows") or 0)
+        cols = int(raw_context.get("cols") or 0)
+    except Exception:
+        return None
+
+    if rows <= 0 or cols <= 0 or rows > 12 or cols > 12:
+        return None
+
+    seats = []
+
+    for item in raw_context.get("seats") or []:
+        if not isinstance(item, dict):
+            continue
+
+        try:
+            row = int(item.get("row"))
+            col = int(item.get("col"))
+        except Exception:
+            continue
+
+        if row < 0 or col < 0 or row >= rows or col >= cols:
+            continue
+
+        name = str(item.get("name") or item.get("student_name") or "").strip()
+        username = normalize_username(item.get("username") or item.get("student_username"))
+
+        if not name and not username:
+            continue
+
+        seats.append({
+            "row": row,
+            "col": col,
+            "seat": str(item.get("seat") or f"{chr(65 + row)}{col + 1}").strip(),
+            "name": name or username,
+            "username": username
+        })
+
+    if not seats:
+        return None
+
+    return {
+        "rows": rows,
+        "cols": cols,
+        "seats": seats[:120]
+    }
+
+
+def seat_context_from_class(class_id):
+    try:
+        class_id = int(class_id or 0)
+    except Exception:
+        return None
+
+    if not class_id:
+        return None
+
+    _, class_data = get_first("classes", "id", class_id)
+
+    if not class_data:
+        return None
+
+    rows = int(class_data.get("rows") or 0)
+    cols = int(class_data.get("cols") or 0)
+    seating = class_data.get("seating") or {}
+    seats = []
+
+    for key, value in seating.items():
+        position = parse_seat_key(key)
+
+        if not position:
+            continue
+
+        row, col = position
+
+        if not isinstance(value, dict):
+            value = {"name": str(value or "").strip()}
+
+        seats.append({
+            "row": row,
+            "col": col,
+            "seat": f"{chr(65 + row)}{col + 1}",
+            "name": str(value.get("name") or value.get("username") or "").strip(),
+            "username": normalize_username(value.get("username"))
+        })
+
+    return normalize_seat_context({
+        "rows": rows,
+        "cols": cols,
+        "seats": seats
+    })
+
+
+def attendance_seat_context(source):
+    raw_context = source.get("seat_map") or source.get("seat_context")
+    context = normalize_seat_context(raw_context)
+
+    if context:
+        return context
+
+    return seat_context_from_class(source.get("class_id"))
+
+
+def expected_names_from_seat_context(seat_context):
+    names = []
+
+    for item in (seat_context or {}).get("seats") or []:
+        name = str(item.get("name") or item.get("username") or "").strip()
+
+        if name:
+            names.append(name[:120])
+
+    return names[:80]
+
+
 def ndjson_event(**payload):
     return json.dumps(payload, ensure_ascii=False) + "\n"
 
@@ -2475,6 +2634,8 @@ def upload_attendance_video():
     uploaded.save(video_path)
     teacher_presence = None
     teacher_metadata = teacher_presence_metadata(request.form)
+    seat_context = attendance_seat_context(request.form)
+    expected_names = expected_names_from_seat_context(seat_context)
 
     try:
         teacher_presence = analyze_and_save_teacher_presence(video_path, filename, teacher_metadata)
@@ -2486,7 +2647,7 @@ def upload_attendance_video():
             "details": str(e)
         }
 
-    result, error = run_ai_attendance()
+    result, error = run_ai_attendance(expected_names, seat_context)
 
     if error:
         message, status = error
@@ -2662,6 +2823,10 @@ def process_gcs_attendance_video():
     object_name = payload.get("object_name") or ""
     expected_names = expected_names_from_payload(payload)
     teacher_metadata = teacher_presence_metadata(payload)
+    seat_context = attendance_seat_context(payload)
+
+    if not expected_names:
+        expected_names = expected_names_from_seat_context(seat_context)
 
     if not object_name.startswith("attendance-uploads/"):
         return jsonify({"success": False, "error": "Invalid uploaded video object."}), 400
@@ -2684,7 +2849,7 @@ def process_gcs_attendance_video():
             "details": str(e)
         }
 
-    result, error = run_ai_attendance(expected_names)
+    result, error = run_ai_attendance(expected_names, seat_context)
 
     if error:
         message, status = error
@@ -2712,6 +2877,10 @@ def process_gcs_attendance_video_stream():
     object_name = payload.get("object_name") or ""
     expected_names = expected_names_from_payload(payload)
     teacher_metadata = teacher_presence_metadata(payload)
+    seat_context = attendance_seat_context(payload)
+
+    if not expected_names:
+        expected_names = expected_names_from_seat_context(seat_context)
 
     if not object_name.startswith("attendance-uploads/"):
         return jsonify({"success": False, "error": "Invalid uploaded video object."}), 400
@@ -2771,6 +2940,13 @@ def process_gcs_attendance_video_stream():
 
             if expected_names:
                 extra_env["AI_EXPECTED_NAMES"] = ",".join(expected_names)
+
+            if seat_context:
+                extra_env["AI_SEAT_MAP"] = json.dumps(
+                    seat_context,
+                    ensure_ascii=False,
+                    separators=(",", ":")
+                )
 
             try:
                 process = subprocess.Popen(

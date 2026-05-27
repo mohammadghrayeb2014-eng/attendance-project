@@ -529,18 +529,32 @@ function applyAiAttendanceResults(aiResults) {
     );
 
     if (isPresent) {
-      const confidence = parseFloat(
+      const verification = String(aiRecord.verification || "").toLowerCase();
+      let confidence = parseFloat(
         aiRecord.accuracy ||
         aiRecord.avg_confidence ||
         aiRecord.confidence ||
         90
       );
 
-      accuracyCell.innerHTML = `
-        <span class="status status-ok" style="font-size: 0.7rem;">
-          ${confidence.toFixed(1)}% Match
-        </span>
-      `;
+      if (!Number.isFinite(confidence)) {
+        confidence = verification === "seat" ? 70 : 90;
+      }
+
+      if (verification === "seat") {
+        const seatHits = aiRecord.seat_hits ? ` (${aiRecord.seat_hits} seat hits)` : "";
+        accuracyCell.innerHTML = `
+          <span class="status status-ok" style="font-size: 0.7rem;">
+            Seat Verified${escapeHtml(seatHits)}
+          </span>
+        `;
+      } else {
+        accuracyCell.innerHTML = `
+          <span class="status status-ok" style="font-size: 0.7rem;">
+            ${confidence.toFixed(1)}% Match
+          </span>
+        `;
+      }
 
       statusTag.textContent = "Present";
       statusTag.className = "tag tag-present";
@@ -633,6 +647,35 @@ function currentSeatedStudentNames() {
     .filter(Boolean);
 }
 
+function currentSeatMapContext() {
+  const seats = Object.entries(currentSeating || {})
+    .map(([key, seatValue]) => {
+      const [row, col] = key.split("_").map(Number);
+
+      if (!Number.isInteger(row) || !Number.isInteger(col)) return null;
+
+      const name = seatDisplayName(seatValue);
+      const username = seatUsername(seatValue);
+
+      if (!name || name === "Empty") return null;
+
+      return {
+        row,
+        col,
+        seat: `${String.fromCharCode(65 + row)}${col + 1}`,
+        name,
+        username
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    rows: currentSeatRows || 0,
+    cols: currentSeatCols || 0,
+    seats
+  };
+}
+
 function currentAssignmentMetadata() {
   let assignment = {};
 
@@ -659,6 +702,8 @@ function appendAssignmentMetadata(formData) {
       formData.append(key, value);
     }
   });
+
+  formData.append("seat_map", JSON.stringify(currentSeatMapContext()));
 }
 
 function escapeHtml(value) {
@@ -697,6 +742,7 @@ async function processGcsVideoWithProgress(objectName) {
       body: JSON.stringify({
         object_name: objectName,
         expected_names: currentSeatedStudentNames(),
+        seat_map: currentSeatMapContext(),
         ...currentAssignmentMetadata()
       })
     });

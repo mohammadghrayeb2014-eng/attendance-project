@@ -2,6 +2,7 @@ import cv2
 import pickle
 import numpy as np
 import pandas as pd
+import json
 from pathlib import Path
 from datetime import datetime
 import sys
@@ -72,6 +73,10 @@ RUNNER_TIME_BUDGET_SECONDS = int(os.getenv("AI_RUNNER_TIME_BUDGET_SECONDS", "600
 IGNORE_REGIONS_RAW = os.getenv("AI_IGNORE_REGIONS", "")
 EXPECTED_NAMES_RAW = os.getenv("AI_EXPECTED_NAMES", "")
 ALLOW_PARTIAL_MATCHES = os.getenv("AI_ALLOW_PARTIAL_MATCHES", "0") == "1"
+SEAT_VERIFY_ENABLED = os.getenv("AI_SEAT_VERIFY", "1") != "0"
+SEAT_VERIFY_MIN_HITS = int(os.getenv("AI_SEAT_VERIFY_MIN_HITS", "2"))
+SEAT_VERIFY_CANDIDATE_MAX_DISTANCE = float(os.getenv("AI_SEAT_VERIFY_CANDIDATE_MAX_DISTANCE", "0.62"))
+SEAT_MAP_RAW = os.getenv("AI_SEAT_MAP", "")
 
 CANONICAL = np.array([
     [38.2946, 51.6963],
@@ -104,6 +109,8 @@ print(
     f"face_crop_target_size={FACE_CROP_TARGET_SIZE}",
     f"time_budget={RUNNER_TIME_BUDGET_SECONDS or 'unlimited'}",
     f"allow_partial_matches={ALLOW_PARTIAL_MATCHES}",
+    f"seat_verify={SEAT_VERIFY_ENABLED}",
+    f"seat_verify_min_hits={SEAT_VERIFY_MIN_HITS}",
     f"ignore_regions={IGNORE_REGIONS_RAW or 'none'}"
 )
 
@@ -141,6 +148,64 @@ def normalize_name(name):
     return str(name or "").strip().lower()
 
 
+def parse_seat_map(raw):
+    if not raw:
+        return None
+
+    try:
+        data = json.loads(raw)
+    except Exception as e:
+        print(f"Seat verification disabled: could not parse seat map ({e})")
+        return None
+
+    try:
+        rows = int(data.get("rows") or 0)
+        cols = int(data.get("cols") or 0)
+    except Exception:
+        return None
+
+    if rows <= 0 or cols <= 0:
+        return None
+
+    seats = []
+
+    for item in data.get("seats") or []:
+        if not isinstance(item, dict):
+            continue
+
+        try:
+            row = int(item.get("row"))
+            col = int(item.get("col"))
+        except Exception:
+            continue
+
+        if row < 0 or col < 0 or row >= rows or col >= cols:
+            continue
+
+        name = str(item.get("name") or item.get("student_name") or "").strip()
+        username = str(item.get("username") or item.get("student_username") or "").strip()
+
+        if not name and not username:
+            continue
+
+        seats.append({
+            "row": row,
+            "col": col,
+            "seat": str(item.get("seat") or f"{chr(65 + row)}{col + 1}"),
+            "name": name,
+            "username": username
+        })
+
+    if not seats:
+        return None
+
+    return {
+        "rows": rows,
+        "cols": cols,
+        "seats": seats
+    }
+
+
 def parse_ignore_regions(raw):
     regions = []
 
@@ -167,6 +232,7 @@ def parse_ignore_regions(raw):
 
 
 IGNORE_REGIONS = parse_ignore_regions(IGNORE_REGIONS_RAW)
+SEAT_MAP = parse_seat_map(SEAT_MAP_RAW)
 
 
 known_name_by_normalized = {
@@ -174,11 +240,36 @@ known_name_by_normalized = {
     for item in known_data
     if item.get("name")
 }
+seat_by_label = {}
+seat_label_by_name = {}
+
+if SEAT_MAP:
+    for item in SEAT_MAP["seats"]:
+        known_name = None
+
+        for value in (item.get("name"), item.get("username")):
+            normalized = normalize_name(value)
+
+            if normalized in known_name_by_normalized:
+                known_name = known_name_by_normalized[normalized]
+                break
+
+        if not known_name:
+            continue
+
+        label = item["seat"]
+        seat_by_label[label] = known_name
+        seat_label_by_name[known_name] = label
+
 expected_names = {
     known_name_by_normalized[name]
     for name in (normalize_name(part) for part in EXPECTED_NAMES_RAW.split(","))
     if name in known_name_by_normalized
 }
+
+if not expected_names and SEAT_MAP:
+    expected_names = set(seat_by_label.values())
+
 match_data = [
     item for item in known_data
     if not expected_names or item["name"] in expected_names
@@ -195,6 +286,9 @@ if expected_names:
 
 if IGNORE_REGIONS:
     print("Ignoring camera regions:", IGNORE_REGIONS)
+
+if SEAT_MAP and seat_by_label:
+    print(f"Seat verification enabled for {len(seat_by_label)} assigned seat(s).")
 
 
 def cosine_distance(a, b):
@@ -505,6 +599,19 @@ def detect_faces(frame):
     return faces
 
 
+def seat_label_for_face(face, frame_shape):
+    if not SEAT_MAP:
+        return None
+
+    height, width = frame_shape[:2]
+    x, y, w, h = face[:4]
+    cx = max(0.0, min(0.9999, (x + w / 2) / max(1, width)))
+    cy = max(0.0, min(0.9999, (y + h / 2) / max(1, height)))
+    row = int(cy * SEAT_MAP["rows"])
+    col = int(cx * SEAT_MAP["cols"])
+    return f"{chr(65 + row)}{col + 1}"
+
+
 def sampled_frame_numbers(total_frames):
     if total_frames <= 0:
         return []
@@ -532,6 +639,8 @@ def run():
     frame_numbers = sampled_frame_numbers(total_frames)
 
     hits = {item["name"]: 0 for item in match_data}
+    seat_hits = {item["name"]: 0 for item in match_data}
+    seat_raw_hits = {item["name"]: 0 for item in match_data}
     confidences = {item["name"]: [] for item in match_data}
     candidate_stats = {
         item["name"]: {
@@ -633,6 +742,39 @@ def run():
                         stats["best_margin"] = match["margin"]
                         stats["best_variant"] = match["variant"]
 
+            if SEAT_VERIFY_ENABLED and SEAT_MAP and seat_by_label:
+                frame_seat_hits = set()
+                frame_seat_raw_hits = set()
+
+                for item in frame_detections:
+                    seat_label = seat_label_for_face(item["face"], frame.shape)
+                    assigned_name = seat_by_label.get(seat_label)
+
+                    if not assigned_name or assigned_name not in seat_hits:
+                        continue
+
+                    frame_seat_raw_hits.add(assigned_name)
+
+                    matched_name = item["name"]
+                    candidate_name = item["candidate_name"]
+                    candidate_dist = item["candidate_dist"]
+
+                    if (
+                        matched_name == assigned_name
+                        or matched_name == "Unknown"
+                        or (
+                            candidate_name == assigned_name
+                            and candidate_dist <= SEAT_VERIFY_CANDIDATE_MAX_DISTANCE
+                        )
+                    ):
+                        frame_seat_hits.add(assigned_name)
+
+                for name in frame_seat_hits:
+                    seat_hits[name] += 1
+
+                for name in frame_seat_raw_hits:
+                    seat_raw_hits[name] += 1
+
             frame_best = {}
 
             for item in frame_detections:
@@ -689,7 +831,13 @@ def run():
     # ===== Generate CSV =====
     rows = []
     for name in hits:
-        is_present = hits[name] >= MIN_HITS
+        face_present = hits[name] >= MIN_HITS
+        seat_present = (
+            SEAT_VERIFY_ENABLED
+            and not face_present
+            and seat_hits.get(name, 0) >= SEAT_VERIFY_MIN_HITS
+        )
+        is_present = face_present or seat_present
         avg_dist = np.mean(confidences[name]) if confidences[name] else 1.0
 
         rows.append({
@@ -697,6 +845,10 @@ def run():
             "name": name,
             "present": "YES" if is_present else "NO",
             "hits": hits[name],
+            "seat_hits": seat_hits.get(name, 0),
+            "seat_raw_hits": seat_raw_hits.get(name, 0),
+            "seat_label": seat_label_by_name.get(name, ""),
+            "verification": "face" if face_present else "seat" if seat_present else "absent",
             "avg_confidence": f"{avg_dist:.4f}" if avg_dist < 1 else "N/A"
         })
 
@@ -709,6 +861,9 @@ def run():
         debug_rows.append({
             "name": name,
             "hits": hits[name],
+            "seat_hits": seat_hits.get(name, 0),
+            "seat_raw_hits": seat_raw_hits.get(name, 0),
+            "seat_label": seat_label_by_name.get(name, ""),
             "candidate_frames": stats["candidate_frames"],
             "best_distance": f"{stats['best_distance']:.4f}" if stats["best_distance"] < 1 else "N/A",
             "best_margin": f"{stats['best_margin']:.4f}",
@@ -719,6 +874,7 @@ def run():
     print(f"\nAttendance saved to {OUT_CSV}")
     print(f"Match debug saved to {DEBUG_CSV}")
     print(f"Present: {sum(1 for r in rows if r['present'] == 'YES')}/{len(rows)}")
+    print(f"Seat verified: {sum(1 for r in rows if r.get('verification') == 'seat')}/{len(rows)}")
 
 
 if __name__ == "__main__":
