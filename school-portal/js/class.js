@@ -264,7 +264,10 @@ function renderAttendance(seating) {
       </td>
 
       <td style="padding: 0.75rem; text-align: right;">
-        <button class="btn btn-outline" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;" onclick="toggleStatus(this)">
+        <button class="btn btn-outline" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;" onclick="recordTalkingEvent(this)">
+          Talk -1
+        </button>
+        <button class="btn btn-outline attendance-toggle-btn" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;" onclick="toggleStatus(this)">
           Mark Absent
         </button>
       </td>
@@ -302,7 +305,7 @@ function markAll(status) {
 
   rows.forEach(tr => {
     const tag = tr.querySelector(".tag");
-    const btn = tr.querySelector("button");
+    const btn = tr.querySelector(".attendance-toggle-btn");
 
     if (!tag || !btn) return;
 
@@ -503,7 +506,7 @@ function applyAiAttendanceResults(aiResults) {
 
     const accuracyCell = tr.querySelector(".accuracy-cell");
     const statusTag = cells[3].querySelector(".tag");
-    const actionBtn = tr.querySelector("button");
+    const actionBtn = tr.querySelector(".attendance-toggle-btn");
 
     if (!studentName || !accuracyCell || !statusTag) return;
 
@@ -706,6 +709,84 @@ function appendAssignmentMetadata(formData) {
   formData.append("seat_map", JSON.stringify(currentSeatMapContext()));
 }
 
+function studentForSeatLabel(seatLabel) {
+  const match = String(seatLabel || "").trim().match(/^([A-Z])(\d+)$/);
+
+  if (!match) return null;
+
+  const row = match[1].charCodeAt(0) - 65;
+  const col = Number(match[2]) - 1;
+  const seatValue = currentSeating[`${row}_${col}`];
+  const name = seatDisplayName(seatValue);
+
+  if (!name || name === "Empty") return null;
+
+  return {
+    seat: `${match[1]}${match[2]}`,
+    student_name: name,
+    student_username: seatUsername(seatValue)
+  };
+}
+
+function participationPayload(eventType, student, source = "manual", details = {}) {
+  return {
+    ...currentAssignmentMetadata(),
+    event_type: eventType,
+    student_name: student.student_name || student.name || "",
+    student_username: student.student_username || student.username || "",
+    seat: student.seat || "",
+    source,
+    details
+  };
+}
+
+async function saveParticipationEvent(eventType, student, source = "manual", details = {}) {
+  const res = await fetch(`${API}/participation/events`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(participationPayload(eventType, student, source, details))
+  });
+  const data = await readResponse(res);
+
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || "Could not save participation event.");
+  }
+
+  return data.record;
+}
+
+async function recordTalkingEvent(btn) {
+  const tr = btn.closest("tr");
+  const cells = tr?.querySelectorAll("td") || [];
+
+  if (cells.length < 2) return;
+
+  const student = {
+    seat: cells[0].textContent.trim(),
+    student_name: cells[1].textContent.trim(),
+    student_username: cells[1].dataset.username || ""
+  };
+
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Saving...";
+
+  try {
+    await saveParticipationEvent("talking", student, "teacher_manual");
+    btn.textContent = "Talk -1 saved";
+    setTimeout(() => {
+      btn.textContent = original;
+    }, 1200);
+  } catch (err) {
+    alert("Could not save talking point: " + err.message);
+    btn.textContent = original;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function escapeHtml(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
@@ -889,6 +970,85 @@ async function uploadSmallVideoDirectly(file) {
   }
 
   return data;
+}
+
+async function uploadHandRaiseVideo(file) {
+  if (file.size > MAX_VIDEO_UPLOAD_BYTES) {
+    throw new Error("Hand raise detection uploads are limited to 30 MB. Use a shorter clip.");
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  appendAssignmentMetadata(formData);
+
+  let res;
+
+  try {
+    res = await fetch(`${API}/participation/hand-raise/upload`, {
+      method: "POST",
+      body: formData
+    });
+  } catch (err) {
+    throw new Error(`Could not upload video for hand raise detection. ${err.message}`);
+  }
+
+  const data = await readResponse(res);
+
+  if (!res.ok || !data.success) {
+    const detail = data.details ? ` ${data.details}` : "";
+    throw new Error(`${data.error || "Hand raise detection failed."}${detail}`);
+  }
+
+  return data;
+}
+
+function renderHandRaiseResult(data) {
+  const target = $("participationResult");
+
+  if (!target) return;
+
+  clearHandRaiseHighlights();
+
+  if (!data?.hand_raised || !data.winner) {
+    const candidates = Array.isArray(data?.candidates) ? data.candidates.length : 0;
+    target.innerHTML = `
+      <span class="tag tag-late">No final hand raise selected</span>
+      <span style="margin-left:0.5rem;">candidates: ${candidates}</span>
+    `;
+    return;
+  }
+
+  const winner = data.winner;
+  highlightHandRaiseSeat(winner.seat);
+
+  target.innerHTML = `
+    <span class="tag tag-present">Hand raise +1</span>
+    <span style="margin-left:0.5rem;">
+      ${escapeHtml(winner.seat || "-")} ${escapeHtml(winner.student_name || winner.student_username || "Unknown")},
+      frames ${winner.frames || 0}/${data.final_frames_checked || 0}
+    </span>
+  `;
+}
+
+function clearHandRaiseHighlights() {
+  document.querySelectorAll(".seat.hand-raise-detected").forEach(seat => {
+    seat.classList.remove("hand-raise-detected");
+    seat.style.outline = "";
+  });
+}
+
+function highlightHandRaiseSeat(seatLabel) {
+  clearHandRaiseHighlights();
+
+  if (!seatLabel) return;
+
+  const seat = document.querySelector(`.seat[data-seat-label="${CSS.escape(seatLabel)}"]`);
+
+  if (!seat) return;
+
+  seat.classList.add("hand-raise-detected");
+  seat.style.outline = "3px solid rgba(34, 197, 94, 0.95)";
+  seat.style.outlineOffset = "2px";
 }
 
 function renderPhoneDetectionResult(data) {
@@ -1156,6 +1316,25 @@ function renderSleepDetectionResult(data) {
       </div>
     ` : ""}
   `;
+}
+
+async function recordSleepParticipation(data) {
+  const seats = Array.isArray(data?.sleep_seats) ? data.sleep_seats : [];
+
+  for (const item of seats.slice(0, 8)) {
+    const student = studentForSeatLabel(item.seat);
+
+    if (!student) continue;
+
+    try {
+      await saveParticipationEvent("sleeping", student, "sleep_detector", {
+        frames: item.frames,
+        best_confidence: item.best_confidence
+      });
+    } catch (err) {
+      console.warn("Could not save sleep participation event:", err);
+    }
+  }
 }
 
 function sleepDetectionSeatLabels(data) {
@@ -1675,6 +1854,7 @@ function wireCameraUI() {
   $("runAiBtn").addEventListener("click", () => $("videoUpload").click());
   $("uploadTriggerBtn").addEventListener("click", () => $("videoUpload").click());
   $("phoneDetectBtn").addEventListener("click", () => $("phoneVideoUpload").click());
+  $("handRaiseDetectBtn").addEventListener("click", () => $("handRaiseVideoUpload").click());
 
   $("videoUpload").addEventListener("change", async (e) => {
     const file = e.target.files[0];
@@ -1734,6 +1914,7 @@ function wireCameraUI() {
     try {
       const data = await uploadSleepDetectionVideo(file);
       renderSleepDetectionResult(data);
+      await recordSleepParticipation(data);
     } catch (err) {
       console.error("Sleep detection error:", err);
 
@@ -1742,6 +1923,41 @@ function wireCameraUI() {
         resultEl.innerHTML = `
           <span class="tag tag-absent">Sleep detection failed</span>
           <span style="margin-left: 0.5rem;">${escapeHtml(message.slice(0, 260))}</span>
+        `;
+      }
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+      e.target.value = "";
+    }
+  });
+
+  $("handRaiseVideoUpload").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+
+    if (!file) return;
+
+    const btn = $("handRaiseDetectBtn");
+    const resultEl = $("participationResult");
+    const originalHtml = btn.innerHTML;
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Detecting...';
+
+    if (resultEl) {
+      resultEl.textContent = "Detecting the final raised hand...";
+    }
+
+    try {
+      const data = await uploadHandRaiseVideo(file);
+      renderHandRaiseResult(data);
+    } catch (err) {
+      console.error("Hand raise detection error:", err);
+
+      if (resultEl) {
+        resultEl.innerHTML = `
+          <span class="tag tag-absent">Hand raise detection failed</span>
+          <span style="margin-left:0.5rem;">${escapeHtml(String(err.message || "").slice(0, 260))}</span>
         `;
       }
     } finally {

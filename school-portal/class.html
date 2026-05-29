@@ -103,10 +103,16 @@
               <i class="fa-solid fa-bed"></i> Detect Sleep
             </button>
             <input type="file" id="phoneVideoUpload" accept="video/*" style="display: none;">
+            <button id="handRaiseDetectBtn" class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.8rem;">
+              <i class="fa-solid fa-hand"></i> Detect Hand Raise
+            </button>
+            <input type="file" id="handRaiseVideoUpload" accept="video/*" style="display: none;">
             <button id="saveAttendanceBtn" class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.8rem;"><i
                 class="fa-solid fa-save"></i> Save Record</button>
           </div>
         </div>
+        <div id="participationResult" class="smallnote"
+          style="margin: -0.5rem 0 0.75rem 0; font-size: 0.85rem; color: var(--text-secondary);"></div>
         <div id="phoneDetectionResult" class="smallnote"
           style="margin: -0.5rem 0 0.75rem 0; font-size: 0.85rem; color: var(--text-secondary);"></div>
         <div class="table-container" style="max-height: 300px; overflow-y: auto;">

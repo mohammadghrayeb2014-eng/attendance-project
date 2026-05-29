@@ -65,6 +65,20 @@ services:
         value: "2"
       - key: AI_SEAT_VERIFY_CANDIDATE_MAX_DISTANCE
         value: "0.62"
+      - key: HAND_RAISE_MODEL
+        value: models/yolo11n-pose.pt
+      - key: HAND_RAISE_MAX_FRAMES
+        value: "50"
+      - key: HAND_RAISE_CONFIDENCE
+        value: "0.25"
+      - key: HAND_RAISE_IMGSZ
+        value: "640"
+      - key: HAND_RAISE_FINAL_WINDOW_RATIO
+        value: "0.45"
+      - key: HAND_RAISE_MIN_FINAL_FRAMES
+        value: "2"
+      - key: HAND_RAISE_WRIST_MARGIN
+        value: "0.04"
       - key: TEACHER_PRESENCE_MODEL
         value: models/yolo11s.pt
       - key: TEACHER_PRESENCE_MAX_FRAMES

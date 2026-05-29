@@ -53,7 +53,7 @@ function safeDate(value) {
 }
 
 function setLoading() {
-  const ids = ["gradesList", "attendanceList", "homeworkList", "agendaList"];
+  const ids = ["gradesList", "attendanceList", "homeworkList", "agendaList", "participationList"];
 
   ids.forEach(id => {
     const node = document.getElementById(id);
@@ -69,7 +69,7 @@ function setLoading() {
 }
 
 function showStudentError(message) {
-  const ids = ["gradesList", "attendanceList", "homeworkList", "agendaList"];
+  const ids = ["gradesList", "attendanceList", "homeworkList", "agendaList", "participationList"];
 
   ids.forEach(id => {
     const node = document.getElementById(id);
@@ -142,13 +142,14 @@ async function loadStudentData() {
   setLoading();
 
   try {
-    const [allGrades, exams, homework, attendance, subjects, classes] = await Promise.all([
+    const [allGrades, exams, homework, attendance, subjects, classes, participation] = await Promise.all([
       fetchJSON(`${API}/grades`).catch(() => []),
       fetchJSON(`${API}/exams`).catch(() => []),
       fetchJSON(`${API}/homework`).catch(() => []),
       fetchJSON(`${API}/attendance/records`).catch(() => []),
       fetchJSON(`${API}/subjects`).catch(() => []),
-      fetchJSON(`${API}/classes`).catch(() => [])
+      fetchJSON(`${API}/classes`).catch(() => []),
+      fetchJSON(`${API}/participation/records`).catch(() => [])
     ]);
 
     const subjectMap = new Map(
@@ -176,6 +177,7 @@ async function loadStudentData() {
 
     renderGrades(myGrades, exams, homework, subjectMap);
     renderAttendance(attendance, studentName, studentUser);
+    renderParticipation(participation, studentName, studentUser);
     renderHomework(myHomework, subjectMap);
     renderAgenda(myExams, myHomework, subjectMap);
 
@@ -312,6 +314,94 @@ function renderAttendance(attendance, studentName, studentUser) {
       </div>
     `;
   }
+}
+
+/* =========================================================
+   Participation
+   ========================================================= */
+
+function participationEventLabel(type) {
+  const key = normalize(type);
+
+  return {
+    hand_raise: "Hand raise",
+    talking: "Talking",
+    sleeping: "Sleeping"
+  }[key] || "Participation";
+}
+
+function participationBadgeClass(points) {
+  return Number(points) >= 0 ? "tag tag-present" : "tag tag-absent";
+}
+
+function renderParticipation(records, studentName, studentUser) {
+  const list = document.getElementById("participationList");
+
+  setText("participationScoreValue", "0");
+
+  if (!list) return;
+
+  const targets = [studentName, studentUser].filter(Boolean);
+  const myRecords = (records || []).filter(record => {
+    const recordName = normalize(record.student_name);
+    const recordUser = normalize(record.student_username);
+
+    return targets.includes(recordName) || targets.includes(recordUser);
+  });
+
+  const total = myRecords.reduce((sum, record) => {
+    const points = Number(record.points || 0);
+    return sum + (Number.isFinite(points) ? points : 0);
+  }, 0);
+
+  setText("participationScoreValue", total > 0 ? `+${total}` : String(total));
+
+  list.innerHTML = "";
+
+  if (myRecords.length === 0) {
+    list.innerHTML = `
+      <div class="text-center text-muted" style="padding: 2rem;">
+        No participation records.
+      </div>
+    `;
+    return;
+  }
+
+  myRecords
+    .slice()
+    .sort((a, b) => String(b.timestamp || b.date || "").localeCompare(String(a.timestamp || a.date || "")))
+    .slice(0, 10)
+    .forEach(record => {
+      const points = Number(record.points || 0);
+      const pointText = points > 0 ? `+${points}` : String(points);
+      const subject = record.subject_name || record.class_name || "Class";
+
+      const div = el("div", "item", "");
+      div.style.padding = "0.75rem";
+      div.style.display = "flex";
+      div.style.justifyContent = "space-between";
+      div.style.alignItems = "center";
+      div.style.gap = "1rem";
+      div.style.borderBottom = "1px solid rgba(255,255,255,0.05)";
+
+      div.innerHTML = `
+        <div>
+          <div style="font-size: 0.9rem; font-weight: 700;">
+            ${participationEventLabel(record.event_type)}
+          </div>
+          <div class="sub" style="font-size: 0.7rem; opacity: 0.6;">
+            ${subject} - ${safeDate(record.timestamp || record.date)}
+          </div>
+        </div>
+
+        <div class="${participationBadgeClass(points)}"
+          style="font-size: 0.8rem; font-weight: 700; min-width: 3rem; text-align: center;">
+          ${pointText}
+        </div>
+      `;
+
+      list.appendChild(div);
+    });
 }
 
 /* =========================================================

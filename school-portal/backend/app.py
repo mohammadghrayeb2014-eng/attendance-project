@@ -42,6 +42,7 @@ PHONE_VIDEO_UPLOAD_DIR = ROOT / "data" / "phone_detection_videos"
 PHONE_OUTPUT_DIR = ROOT / "output" / "phone_detection"
 SLEEP_VIDEO_UPLOAD_DIR = ROOT / "data" / "sleep_detection_videos"
 SLEEP_OUTPUT_DIR = ROOT / "output" / "sleep_detection"
+PARTICIPATION_VIDEO_UPLOAD_DIR = ROOT / "data" / "participation_videos"
 TEACHER_PRESENCE_VIDEO_UPLOAD_DIR = ROOT / "data" / "teacher_presence_videos"
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(30 * 1024 * 1024)))
@@ -90,6 +91,15 @@ SLEEP_DETECTION_CLASSES = {
     if item.strip()
 }
 SLEEP_YOLO_MODELS = {}
+HAND_RAISE_MODEL = os.getenv("HAND_RAISE_MODEL", "models/yolo11n-pose.pt").strip()
+HAND_RAISE_DEVICE = os.getenv("HAND_RAISE_DEVICE", PHONE_DETECTION_DEVICE).strip()
+HAND_RAISE_MAX_FRAMES = int(os.getenv("HAND_RAISE_MAX_FRAMES", "50"))
+HAND_RAISE_CONFIDENCE = float(os.getenv("HAND_RAISE_CONFIDENCE", "0.25"))
+HAND_RAISE_IMGSZ = int(os.getenv("HAND_RAISE_IMGSZ", "640"))
+HAND_RAISE_FINAL_WINDOW_RATIO = float(os.getenv("HAND_RAISE_FINAL_WINDOW_RATIO", "0.45"))
+HAND_RAISE_MIN_FINAL_FRAMES = int(os.getenv("HAND_RAISE_MIN_FINAL_FRAMES", "2"))
+HAND_RAISE_WRIST_MARGIN = float(os.getenv("HAND_RAISE_WRIST_MARGIN", "0.04"))
+HAND_RAISE_YOLO_MODELS = {}
 TEACHER_PRESENCE_MODEL = os.getenv("TEACHER_PRESENCE_MODEL", "models/yolo11s.pt").strip()
 TEACHER_PRESENCE_DEVICE = os.getenv("TEACHER_PRESENCE_DEVICE", PHONE_DETECTION_DEVICE).strip()
 TEACHER_PRESENCE_MAX_FRAMES = int(os.getenv("TEACHER_PRESENCE_MAX_FRAMES", "20"))
@@ -259,6 +269,14 @@ def clear_sleep_detection_videos():
     SLEEP_VIDEO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
     for path in SLEEP_VIDEO_UPLOAD_DIR.iterdir():
+        if path.is_file() and path.suffix.lower() in ALLOWED_VIDEO_EXTENSIONS:
+            path.unlink()
+
+
+def clear_participation_videos():
+    PARTICIPATION_VIDEO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    for path in PARTICIPATION_VIDEO_UPLOAD_DIR.iterdir():
         if path.is_file() and path.suffix.lower() in ALLOWED_VIDEO_EXTENSIONS:
             path.unlink()
 
@@ -550,6 +568,22 @@ def teacher_presence_model(model_path):
 
     TEACHER_YOLO_MODELS[model_path] = YOLO(model_path)
     return TEACHER_YOLO_MODELS[model_path]
+
+
+def hand_raise_model(model_path):
+    if model_path in HAND_RAISE_YOLO_MODELS:
+        return HAND_RAISE_YOLO_MODELS[model_path]
+
+    try:
+        from ultralytics import YOLO
+    except ImportError as e:
+        raise RuntimeError(
+            "Local hand raise detector is not installed. Run `pip install -r requirements.txt` "
+            "so the ultralytics YOLO package is available."
+        ) from e
+
+    HAND_RAISE_YOLO_MODELS[model_path] = YOLO(model_path)
+    return HAND_RAISE_YOLO_MODELS[model_path]
 
 
 def yolo_detection_kwargs(confidence, imgsz=PHONE_DETECTION_IMGSZ, device=PHONE_DETECTION_DEVICE):
@@ -1123,6 +1157,223 @@ def sleep_seat_summary(frame_results):
 
     stable.sort(key=lambda item: (item["frames"], item["best_confidence"], item["count"]), reverse=True)
     return stable[:8]
+
+
+def participation_points_for_event(event_type):
+    return {
+        "hand_raise": 1,
+        "talking": -1,
+        "sleeping": -2
+    }.get(str(event_type or "").strip().lower())
+
+
+def participation_metadata(source):
+    metadata = teacher_presence_metadata(source)
+
+    return {
+        **metadata,
+        "teacher_username": normalize_username(source.get("teacher_username"))
+    } if metadata else {
+        "teacher_username": normalize_username(source.get("teacher_username")),
+        "class_id": int_or_none(source.get("class_id")),
+        "subject_id": int_or_none(source.get("subject_id")),
+        "class_name": str(source.get("class_name") or "").strip(),
+        "subject_name": str(source.get("subject_name") or "").strip()
+    }
+
+
+def save_participation_event(payload):
+    event_type = str(payload.get("event_type") or "").strip().lower()
+    points = participation_points_for_event(event_type)
+
+    if points is None:
+        raise ValueError("Unsupported participation event.")
+
+    student_name = str(payload.get("student_name") or payload.get("name") or "").strip()
+    student_username = normalize_username(payload.get("student_username") or payload.get("username"))
+
+    if not student_name and not student_username:
+        raise ValueError("Student is required.")
+
+    metadata = participation_metadata(payload)
+    now = datetime.now()
+    record = {
+        "id": next_id("participation_events"),
+        "date": now.strftime("%Y-%m-%d"),
+        "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "event_type": event_type,
+        "points": points,
+        "student_name": student_name or student_username,
+        "student_username": student_username,
+        "seat": str(payload.get("seat") or "").strip(),
+        "source": str(payload.get("source") or "manual").strip(),
+        "teacher_username": metadata.get("teacher_username"),
+        "class_id": metadata.get("class_id"),
+        "subject_id": metadata.get("subject_id"),
+        "class_name": metadata.get("class_name", ""),
+        "subject_name": metadata.get("subject_name", ""),
+        "details": payload.get("details") or {}
+    }
+
+    db.collection("participation_events").add(record)
+    return record
+
+
+def seat_context_student_by_label(seat_context):
+    result = {}
+
+    for item in (seat_context or {}).get("seats") or []:
+        label = str(item.get("seat") or "").strip()
+
+        if label:
+            result[label] = {
+                "seat": label,
+                "student_name": str(item.get("name") or item.get("username") or "").strip(),
+                "student_username": normalize_username(item.get("username"))
+            }
+
+    return result
+
+
+def seat_label_from_normalized_point(x_ratio, y_ratio, rows, cols):
+    if not rows or not cols:
+        return ""
+
+    col = max(0, min(cols - 1, int(max(0.0, min(0.9999, x_ratio)) * cols)))
+    row = max(0, min(rows - 1, int(max(0.0, min(0.9999, y_ratio)) * rows)))
+    return f"{chr(65 + row)}{col + 1}"
+
+
+def keypoint_xy_conf(xy, conf, index):
+    try:
+        x, y = xy[index]
+    except Exception:
+        return None
+
+    score = 1.0
+
+    if conf is not None:
+        try:
+            score = float(conf[index])
+        except Exception:
+            score = 0.0
+
+    if score < 0.20:
+        return None
+
+    return float(x), float(y), score
+
+
+def raised_hand_sides(xy, conf, box_height):
+    sides = []
+    margin = max(10.0, box_height * HAND_RAISE_WRIST_MARGIN)
+
+    for side, shoulder_idx, elbow_idx, wrist_idx in (
+        ("left", 5, 7, 9),
+        ("right", 6, 8, 10)
+    ):
+        shoulder = keypoint_xy_conf(xy, conf, shoulder_idx)
+        wrist = keypoint_xy_conf(xy, conf, wrist_idx)
+
+        if not shoulder or not wrist:
+            continue
+
+        elbow = keypoint_xy_conf(xy, conf, elbow_idx)
+
+        if wrist[1] < shoulder[1] - margin and (not elbow or wrist[1] < elbow[1] - (margin * 0.5)):
+            sides.append(side)
+
+    return sides
+
+
+def run_hand_raise_detection(video_path, seat_context):
+    model_path = resolve_yolo_model_path(HAND_RAISE_MODEL, "yolo11n-pose.pt")
+    model = hand_raise_model(model_path)
+    frame_results = []
+    rows = int((seat_context or {}).get("rows") or 0)
+    cols = int((seat_context or {}).get("cols") or 0)
+
+    for frame_number, sample in sampled_video_frames(video_path, HAND_RAISE_MAX_FRAMES, False, "off"):
+        result = model(
+            sample["frame"],
+            **yolo_detection_kwargs(HAND_RAISE_CONFIDENCE, HAND_RAISE_IMGSZ, HAND_RAISE_DEVICE)
+        )[0]
+        boxes = getattr(result, "boxes", None)
+        keypoints = getattr(result, "keypoints", None)
+        detections = []
+
+        if boxes is not None and keypoints is not None and getattr(keypoints, "xy", None) is not None:
+            xy_list = keypoints.xy.cpu().numpy()
+            conf_list = keypoints.conf.cpu().numpy() if getattr(keypoints, "conf", None) is not None else [None] * len(xy_list)
+
+            for index, box in enumerate(boxes):
+                if index >= len(xy_list):
+                    continue
+
+                x1, y1, x2, y2 = [float(value) for value in box.xyxy[0]]
+                width = max(1.0, x2 - x1)
+                height = max(1.0, y2 - y1)
+                sides = raised_hand_sides(xy_list[index], conf_list[index], height)
+
+                if not sides:
+                    continue
+
+                center_x = (x1 + (width / 2)) / max(1, sample["frame_width"])
+                center_y = (y1 + (height / 2)) / max(1, sample["frame_height"])
+                detections.append({
+                    "seat": seat_label_from_normalized_point(center_x, center_y, rows, cols),
+                    "x": x1 + (width / 2),
+                    "y": y1 + (height / 2),
+                    "width": width,
+                    "height": height,
+                    "confidence": round(float(box.conf[0]), 4),
+                    "sides": sides
+                })
+
+        frame_results.append({
+            "frame": frame_number,
+            "frame_width": sample["frame_width"],
+            "frame_height": sample["frame_height"],
+            "detections": detections
+        })
+
+    final_start = max(0, int(len(frame_results) * (1.0 - HAND_RAISE_FINAL_WINDOW_RATIO)))
+    final_frames = frame_results[final_start:]
+    by_seat = {}
+
+    for frame_item in final_frames:
+        seen = set()
+
+        for detection in frame_item["detections"]:
+            seat = detection.get("seat")
+
+            if not seat or seat in seen:
+                continue
+
+            seen.add(seat)
+            item = by_seat.setdefault(seat, {"seat": seat, "frames": 0, "best_confidence": 0.0})
+            item["frames"] += 1
+            item["best_confidence"] = max(item["best_confidence"], detection["confidence"])
+
+    student_by_seat = seat_context_student_by_label(seat_context)
+    candidates = sorted(by_seat.values(), key=lambda item: (item["frames"], item["best_confidence"]), reverse=True)
+    winner = candidates[0] if candidates and candidates[0]["frames"] >= HAND_RAISE_MIN_FINAL_FRAMES else None
+
+    if winner:
+        winner = {**winner, **student_by_seat.get(winner["seat"], {})}
+
+    return {
+        "success": True,
+        "detector": "yolo_pose_hand_raise_final_student",
+        "model": model_path,
+        "hand_raised": bool(winner),
+        "winner": winner,
+        "candidates": [{**item, **student_by_seat.get(item["seat"], {})} for item in candidates[:8]],
+        "frames_checked": len(frame_results),
+        "final_frames_checked": len(final_frames),
+        "min_final_frames": HAND_RAISE_MIN_FINAL_FRAMES,
+        "frames": frame_results[-12:]
+    }
 
 
 def run_sleep_detection(video_path):
@@ -2559,6 +2810,150 @@ def process_gcs_teacher_presence_video():
         "success": True,
         "filename": filename,
         "teacher_presence": teacher_presence
+    })
+
+
+@app.get("/api/participation/records")
+def get_participation_records():
+    records = docs_to_list("participation_events")
+    student_username = normalize_username(request.args.get("student_username"))
+
+    if student_username:
+        records = [
+            item for item in records
+            if normalize_username(item.get("student_username")) == student_username
+        ]
+
+    return jsonify(records)
+
+
+@app.get("/api/participation/summary")
+def get_participation_summary():
+    records = docs_to_list("participation_events")
+    summary = {}
+
+    for record in records:
+        key = normalize_username(record.get("student_username")) or normalize_username(record.get("student_name"))
+
+        if not key:
+            continue
+
+        item = summary.setdefault(key, {
+            "student_username": normalize_username(record.get("student_username")),
+            "student_name": record.get("student_name") or record.get("student_username"),
+            "total": 0,
+            "hand_raise": 0,
+            "talking": 0,
+            "sleeping": 0,
+            "events": 0
+        })
+        points = int(record.get("points") or 0)
+        event_type = str(record.get("event_type") or "").strip().lower()
+        item["total"] += points
+        item["events"] += 1
+
+        if event_type in item:
+            item[event_type] += points
+
+    student_username = normalize_username(request.args.get("student_username"))
+
+    if student_username:
+        return jsonify(summary.get(student_username, {
+            "student_username": student_username,
+            "student_name": student_username,
+            "total": 0,
+            "hand_raise": 0,
+            "talking": 0,
+            "sleeping": 0,
+            "events": 0
+        }))
+
+    return jsonify(list(summary.values()))
+
+
+@app.post("/api/participation/events")
+def create_participation_event():
+    payload = request.get_json(force=True, silent=True) or {}
+
+    try:
+        record = save_participation_event(payload)
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        app.logger.exception("Could not save participation event")
+        return jsonify({
+            "success": False,
+            "error": "Could not save participation event.",
+            "details": str(e)
+        }), 500
+
+    return jsonify({"success": True, "record": record}), 201
+
+
+@app.post("/api/participation/hand-raise/upload")
+def upload_hand_raise_video():
+    if "file" not in request.files:
+        return jsonify({"success": False, "error": "No video file uploaded"}), 400
+
+    uploaded = request.files["file"]
+
+    if not uploaded or not uploaded.filename:
+        return jsonify({"success": False, "error": "No video file selected"}), 400
+
+    filename = secure_filename(uploaded.filename)
+    suffix = Path(filename).suffix.lower()
+
+    if suffix not in ALLOWED_VIDEO_EXTENSIONS:
+        return jsonify({
+            "success": False,
+            "error": "Unsupported video type. Upload mp4, mov, avi, or mkv."
+        }), 400
+
+    seat_context = attendance_seat_context(request.form)
+
+    if not seat_context:
+        return jsonify({
+            "success": False,
+            "error": "Seat map is required for hand raise detection."
+        }), 400
+
+    clear_participation_videos()
+    video_path = PARTICIPATION_VIDEO_UPLOAD_DIR / filename
+    uploaded.save(video_path)
+
+    try:
+        result = run_hand_raise_detection(video_path, seat_context)
+    except Exception as e:
+        app.logger.exception("Hand raise detection failed")
+        return jsonify({
+            "success": False,
+            "filename": filename,
+            "error": "Hand raise detection failed.",
+            "details": str(e)
+        }), 500
+
+    event = None
+    winner = result.get("winner") or {}
+
+    if result.get("hand_raised") and (winner.get("student_name") or winner.get("student_username")):
+        payload = {
+            **participation_metadata(request.form),
+            "event_type": "hand_raise",
+            "student_name": winner.get("student_name"),
+            "student_username": winner.get("student_username"),
+            "seat": winner.get("seat"),
+            "source": "hand_raise_detector",
+            "details": {
+                "frames": winner.get("frames"),
+                "best_confidence": winner.get("best_confidence")
+            }
+        }
+        event = save_participation_event(payload)
+
+    return jsonify({
+        **result,
+        "filename": filename,
+        "event": event
     })
 
 

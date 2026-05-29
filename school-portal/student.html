@@ -73,6 +73,10 @@
         <i class="fa-solid fa-clipboard-check"></i> Attendance
       </a>
 
+      <a href="#participationSection" class="nav-link" id="navParticipation">
+        <i class="fa-solid fa-hand"></i> Participation
+      </a>
+
       <a href="#homeworkSection" class="nav-link" id="navHomework">
         <i class="fa-solid fa-book"></i> Homework
       </a>
@@ -140,6 +144,16 @@
         <div class="stat-info">
           <span class="stat-label">Homework</span>
           <span class="stat-value">Updated</span>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon">
+          <i class="fa-solid fa-hand-sparkles"></i>
+        </div>
+        <div class="stat-info">
+          <span class="stat-label">Participation</span>
+          <span class="stat-value" id="participationScoreValue">0</span>
         </div>
       </div>
     </div>
@@ -216,6 +230,19 @@
           <div id="attendanceList">
             <div class="text-center text-muted" style="padding: 2rem;">
               Attendance records will appear here.
+            </div>
+          </div>
+        </div>
+
+        <!-- Participation -->
+        <div class="card" id="participationSection">
+          <h3>
+            <i class="fa-solid fa-hand-sparkles gradient-text"></i> My Participation
+          </h3>
+
+          <div id="participationList">
+            <div class="text-center text-muted" style="padding: 2rem;">
+              Participation records will appear here.
             </div>
           </div>
         </div>

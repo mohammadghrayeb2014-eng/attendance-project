@@ -17,6 +17,7 @@ models/*
 !models/labels.json
 !models/phone_yolo11.pt
 !models/sleep_yolo11.pt
+!models/yolo11n-pose.pt
 !models/yolo11s.pt
 classroom_videos/
 /yolov8n.pt
